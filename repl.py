@@ -115,6 +115,21 @@ class Lexer:
 			# Whitespace
 			elif c.isspace():
 				continue
+			# Comments and Division
+			elif c == '/':
+				c = self.getchar()
+
+				# TODO: multiline comments
+				# Single line comment
+				if c == '/':
+					while c != '' and c != '\n':
+						c = self.getchar()
+					continue
+				elif c == '=':
+					return (Lexer.operators['/='], '/=')
+				else:
+					self.unget()
+					return (Lexer.operators['/'], '/')
 			# Numbers
 			elif c.isdigit():
 				# Integer Part
@@ -163,7 +178,7 @@ class Lexer:
 
 				return (TokenType.STRING, text)
 			# Operators
-			elif c in ['<', '>', '=', '+', '-', '*', '/', '!']:
+			elif c in ['<', '>', '=', '+', '-', '*', '!']:
 				if self.getchar() == '=':
 					return (Lexer.operators[c + '='], c + '=')
 				else:
@@ -197,9 +212,11 @@ class Parser:
 
 def testLexer():
 	testCases = [
+		# Numbers
 		('0', [(TokenType.NUMBER, 0)]),
 		('123', [(TokenType.NUMBER, 123)]),
 		('0.234', [(TokenType.NUMBER, 0.234)]),
+		# Reserved words
 		('true', [(TokenType.BOOL, True)]),
 		('false', [(TokenType.BOOL, False)]),
 		('null', [(TokenType.NULL, None)]),
@@ -208,6 +225,7 @@ def testLexer():
 		('if', [(TokenType.IF, None)]),
 		('while', [(TokenType.WHILE, None)]),
 		('return', [(TokenType.RETURN, None)]),
+		# Identifiers
 		('a', [(TokenType.IDENTIFIER, 'a')]),
 		('a123', [(TokenType.IDENTIFIER, 'a123')]),
 		('ABC_DEF', [(TokenType.IDENTIFIER, 'ABC_DEF')]),
@@ -218,12 +236,15 @@ def testLexer():
 		('"escape \\" sequence \\\\ tada!"', [(TokenType.STRING, 'escape " sequence \\ tada!')]),
 		('"\\b\\f\\n\\r\\t\\v\\0\\\'\\"\\\\"', [(TokenType.STRING, '\b\f\n\r\t\v\0\'\"\\')]),
 		('"\\a\\c\\d\\e\\g"', [(TokenType.STRING, 'acdeg')]),
-
 		('\'literal\'', [(TokenType.STRING, 'literal')]),
 		('\'escape \\" sequence \\\\ tada!\'', [(TokenType.STRING, 'escape " sequence \\ tada!')]),
 		('\'\\b\\f\\n\\r\\t\\v\\0\\\'\\"\\\\\'', [(TokenType.STRING, '\b\f\n\r\t\v\0\'\"\\')]),
 		('\'\\a\\c\\d\\e\\g\'', [(TokenType.STRING, 'acdeg')]),
 		('\'\\\'\'', [(TokenType.STRING, '\'')]),
+		# Comments
+		('a//hello people', [(TokenType.IDENTIFIER, 'a')]),
+		('//hello people\n123', [(TokenType.NUMBER, 123)]),
+		# Operators
 	]
 
 	for source, expected in testCases:
