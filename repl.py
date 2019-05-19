@@ -73,7 +73,8 @@ class Lexer:
 		'}': TokenType.CLOSE_BRACE,
 		'[': TokenType.OPEN_BRACKET,
 		']': TokenType.CLOSE_BRACKET,
-		',': TokenType.COMMA
+		',': TokenType.COMMA,
+		';': TokenType.SEMICOLON
 	}
 
 	escapeSequences = {
@@ -139,6 +140,7 @@ class Lexer:
 					return (Lexer.operators['/'], '/')
 			# Numbers
 			elif c.isdigit():
+				# TODO: octal and hex literals
 				# Integer Part
 				number = 0
 				while c.isdigit():
@@ -191,8 +193,6 @@ class Lexer:
 				else:
 					self.unget()
 					return (Lexer.operators[c], c)
-			elif c in Lexer.punctuation:
-				return (Lexer.punctuation[c], None)
 			elif c == '&':
 				if self.getchar() != '&':
 					raise Exception('invalid token for and')
@@ -201,6 +201,9 @@ class Lexer:
 				if self.getchar() != '|':
 					raise Exception('invalid token for or')
 				return (TokenType.OR_OP, '||')
+			# Punctuation
+			elif c in Lexer.punctuation:
+				return (Lexer.punctuation[c], None)
 			else:
 				raise Exception('unknown token %r' % c)
 
@@ -213,16 +216,183 @@ class Lexer:
 			tokens.append(t)
 		return tokens
 
+class Expression:
+	pass
+
+class Number(Expression):
+	def __init__(self, value):
+		self.value = value
+	def __repr__(self):
+		return '%f' % self.value
+
+class String(Expression):
+	def __init__(self, value):
+		self.value = value
+
+	def __repr__(self):
+		return '%r' % self.value
+
+class Bool(Expression):
+	def __init__(self, value):
+		assert(value in [True, False])
+		self.value = value
+	def __repr__(self):
+		if self.value:
+			return 'true'
+		return 'false'
+
+class Null(Expression):
+	def __repr__(self):
+		return 'null'
+
+class Identifier(Expression):
+	def __init__(self, name):
+		self.name = name
+	def __repr__(self):
+		return 'id(%s)' % self.name
+
+class Function(Expression):
+	def __init__(self, params, body, env=None):
+		paramNames = set()
+		for param in params:
+			if param.name in paramNames:
+				raise Exception('Repeated function parameter name %r' % param.name)
+			paramNames.add(param.name)
+		# TODO: how to handle environment (closures ...)
+		self.params = params
+		self.body = body
+
+	def __repr__(self):
+		paramsRep = ', '.join(p.__repr__() for p in self.params)
+		return 'function(%s)%r' % (paramsRep, self.body)
+
+class Block:
+	def __init__(self, statements):
+		self.statements = statements
+	def __repr__(self):
+		r = '\n'.join(s.__repr__() for s in self.statements)
+		return '{ %s }' % r
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
-		self.lookahead = None
+		self.tokenType, self.tokenValue = self.lexer.lexan()
 
 	def match(self, c):
-		pass
+		if self.tokenType != c:
+			raise Exception('expected token of type %r not %r (%r)' % (c, self.tokenValue, self.tokenValue))
+		self.tokenType, self.tokenValue = self.lexer.lexan()
+
+	def statement(self):
+		'''
+		Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression
+		'''
+		# TODO:
+		if self.tokenType == TokenType.OPEN_BRACE:
+			return self.block()
+		return self.expression()
+
+	def expression(self):
+		return self.atom()
+
+	def block(self):
+		statements = []
+		self.match(TokenType.OPEN_BRACE)
+		while self.tokenType != TokenType.CLOSE_BRACE:
+			statements.append(self.statement)
+		self.match(TokenType.CLOSE_BRACE)
+		return Block(statements)
+
+	def identifier(self):
+		i = Identifier(self.tokenValue)
+		self.match(TokenType.IDENTIFIER)
+		return i
+
+	def function(self):
+		'''
+		Function -> 'function' '(' ParameterNames ')' Block
+		ParameterNames -> epsilon | ParameterName {',' ParameterName }*
+		ParameterName -> Identifier
+		'''
+		self.match(TokenType.FUNCTION)
+		self.match(TokenType.OPEN_PAREN)
+
+		parameters = []
+		if self.tokenType == TokenType.IDENTIFIER:
+			parameters.append(self.identifier())
+			while self.tokenType == TokenType.COMMA:
+				self.match(TokenType.COMMA)
+				parameters.append(self.identifier())
+
+		self.match(TokenType.CLOSE_PAREN)
+		body = self.block()
+		return Function(parameters, body)
 
 	def atom(self):
-		pass
+		'''
+		Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
+		'''
+		if self.tokenType == TokenType.NUMBER:
+			e = Number(self.tokenValue)
+			self.match(TokenType.NUMBER)
+		elif self.tokenType == TokenType.STRING:
+			e = String(self.tokenValue)
+			self.match(TokenType.STRING)
+		elif self.tokenType == TokenType.IDENTIFIER:
+			return self.identifier()
+		elif self.tokenType == TokenType.BOOL:
+			e = Bool(self.tokenValue)
+			self.match(TokenType.BOOL)
+		elif self.tokenType == TokenType.NULL:
+			e = Null()
+			self.match(TokenType.NULL)
+		elif self.tokenType == TokenType.FUNCTION:
+			return self.function()
+		else:
+			self.match(TokenType.OPEN_PAREN)
+			e = self.expression()
+			self.match(TokenType.CLOSE_PAREN)
+		return e
+
+	def parse(self):
+		program = self.statement()
+		self.match(TokenType.EOF)
+		return program
+
+def testParser():
+	testCases = [
+		('0',),
+		('\'hello\'',),
+		('a',),
+		('true',),
+		('false',),
+		('null',),
+		('function(){}',),
+		('function(a){}',),
+		('function(a, b, c){}',),
+		('(1)',),
+	]
+
+	for testCase in testCases:
+		source = testCase[0]
+		print(source, Parser(source).parse())
+
+	invalid = [
+		('function()', 'function without body'),
+		('function)', 'function without open paren'),
+		('function(', 'function without close paren'),
+		('function(a b){}', 'invalid paramenter list'),
+		('function(7){}', 'invalid paramenter list'),
+		('function(a, b,){}', 'invalid paramenter list'),
+		('function(a, b, a){}', 'invalid parameter list'),
+	]
+
+	for source, description in invalid:
+		try:
+			Parser(source).parse()
+			print('FAIL: expected error', source, description)
+		except:
+			pass
 
 def testLexer():
 	testCases = [
@@ -264,6 +434,8 @@ def testLexer():
 		('a /*hello /* people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
 		('a /*hello * //people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
 		('a//hello people', [(TokenType.IDENTIFIER, 'a')]),
+		# Punctuation
+		('(){};', [(TokenType.OPEN_PAREN, None), (TokenType.CLOSE_PAREN, None), (TokenType.OPEN_BRACE, None), (TokenType.CLOSE_BRACE, None), (TokenType.SEMICOLON, None)]),
 		# Operators
 	]
 
@@ -286,13 +458,6 @@ def testLexer():
 			print('FAIL: expected error', source)
 		except:
 			pass
-
-class Parser:
-	def __init__(s):
-		self.lexer = Lexer(s)
-
-def testParser():
-	pass
 
 '''
 Grammar
@@ -342,3 +507,4 @@ see: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators
 '''
 if __name__ == '__main__':
 	testLexer()
+	testParser()
