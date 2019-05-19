@@ -556,6 +556,7 @@ class Parser:
 	def statement(self):
 		'''
 		Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression ';'
+		ReturnStatement -> 'return' [ Expression ] ';'
 		'''
 		# TODO:
 		if self.tokenType == TokenType.OPEN_BRACE:
@@ -564,6 +565,13 @@ class Parser:
 			return self.ifStatement()
 		if self.tokenType == TokenType.WHILE:
 			return self.whileStatement()
+		if self.tokenType == TokenType.RETURN:
+			self.match(TokenType.RETURN)
+			expr = None
+			if self.tokenType != TokenType.SEMICOLON:
+				expr = self.expression()
+			self.match(TokenType.SEMICOLON)
+			return Return(expr)
 
 		e = self.expression()
 		self.match(TokenType.SEMICOLON)
@@ -573,7 +581,7 @@ class Parser:
 		statements = []
 		self.match(TokenType.OPEN_BRACE)
 		while self.tokenType != TokenType.CLOSE_BRACE:
-			statements.append(self.statement)
+			statements.append(self.statement())
 		self.match(TokenType.CLOSE_BRACE)
 		return Block(statements)
 
@@ -624,6 +632,8 @@ def testParser():
 		('while(x > 0) {}',),
 		('while(x > 0) x = x - 1;',),
 		('while(x > 1)  if(x % 2 == 0) x = x/2; else x = 3*x + 1;',),
+		('function(x) { return; }(0);',),
+		('function(x) { return x + 1; }(0);',),
 	]
 
 	for testCase in testCases:
@@ -666,6 +676,10 @@ def testParser():
 		('while (x {}', 'no close paren'),
 		('while (x)', 'no body'),
 		('while() {}', 'no loop condition'),
+		('function(x) { return x + 1 }', 'no semicoln after expresion in return'),
+		('function(x) { return }', 'invalid return'),
+		('function(x) { return return; }', 'invalid return'),
+		('return ;','Return statement outside of function'),
 	]
 
 	for source, description in invalid:
