@@ -57,6 +57,7 @@ class Lexer:
 		'-=': TokenType.ASSIGN_OP,
 		'*=': TokenType.ASSIGN_OP,
 		'/=': TokenType.ASSIGN_OP,
+		'%=': TokenType.ASSIGN_OP,
 		'<=': TokenType.REL_OP,
 		'>=': TokenType.REL_OP,
 		'!=': TokenType.EQ_OP,
@@ -187,7 +188,7 @@ class Lexer:
 
 				return (TokenType.STRING, text)
 			# Operators
-			elif c in ['<', '>', '=', '+', '-', '*', '!']:
+			elif c in ['<', '>', '=', '+', '-', '*', '%', '!']:
 				if self.getchar() == '=':
 					return (Lexer.operators[c + '='], c + '=')
 				else:
@@ -303,6 +304,15 @@ class UnaryMinus(Expression):
 	def __repr__(self):
 		return 'minus(%r)' % self.expr
 
+class MulOp(Expression):
+	def __init__(self, lhs, rhs, op):
+		assert(isinstance(lhs, Expression))
+		assert(isinstance(rhs, Expression))
+		assert(op in '*/%')
+		self.lhs, self.rhs, self.op = lhs, rhs, op
+	def __repr__(self):
+		return '(%s %r %r)' % (self.op, self.lhs, self.rhs)
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
@@ -323,7 +333,7 @@ class Parser:
 		return self.expression()
 
 	def expression(self):
-		return self.factor()
+		return self.term()
 
 	def block(self):
 		statements = []
@@ -433,6 +443,19 @@ class Parser:
 
 		return self.unit()
 
+	def term(self):
+		'''
+		Term -> Factor { MulOp Factor }*
+		MulOp -> '*' | '/' | '%'
+		'''
+		t = self.factor()
+		while self.tokenType == TokenType.MUL_OP:
+			op = self.tokenValue
+			self.match(TokenType.MUL_OP)
+			f = self.factor()
+			t = MulOp(t, f, op)
+		return t
+
 	def parse(self):
 		program = self.statement()
 		self.match(TokenType.EOF)
@@ -466,6 +489,8 @@ def testParser():
 		('-8',),
 		('!-8',),
 		('-!0',),
+		('71 * -8 / +2 % 10',),
+		('order["quantity"] * prices[order["item"]]', ),
 	]
 
 	for testCase in testCases:
@@ -488,6 +513,9 @@ def testParser():
 		('+', 'unary plus without argument'),
 		('!', 'not without argument'),
 		('!!!', 'not without argument'),
+		('71 * -8 / +2 %', 'no modulus'),
+		('71 * -8 /', 'no divisor'),
+		('71 *', 'not rhs'),
 	]
 
 	for source, description in invalid:
@@ -591,7 +619,7 @@ AddOp -> '+' | '-'
 Term -> Factor { MulOp Factor }*
 MulOp -> '*' | '/' | '%'
 
-Factor -> '!' Factor | '-' Factor | Unit
+Factor -> '!' Factor | '-' Factor | '+' Factor | Unit
 
 Unit -> Atom | MemberAccess | FunctionCall
 
