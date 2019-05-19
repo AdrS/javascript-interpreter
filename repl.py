@@ -225,7 +225,8 @@ class Lexer:
 		return tokens
 
 class Statement:
-	pass
+	def eval(self):
+		raise NotImplemented
 
 class Expression(Statement):
 	pass
@@ -235,13 +236,16 @@ class Number(Expression):
 		self.value = value
 	def __repr__(self):
 		return '%f' % self.value
+	def eval(self):
+		return self.value
 
 class String(Expression):
 	def __init__(self, value):
 		self.value = value
-
 	def __repr__(self):
 		return '%r' % self.value
+	def eval(self):
+		return self.value
 
 class Bool(Expression):
 	def __init__(self, value):
@@ -251,10 +255,14 @@ class Bool(Expression):
 		if self.value:
 			return 'true'
 		return 'false'
+	def eval(self):
+		return self.value
 
 class Null(Expression):
 	def __repr__(self):
 		return 'null'
+	def eval(self):
+		return None
 
 class Identifier(Expression):
 	def __init__(self, name):
@@ -308,6 +316,8 @@ class Not(Expression):
 		self.expr = expr
 	def __repr__(self):
 		return 'not(%r)' % self.expr
+	def eval(self):
+		return not self.expr.eval()
 
 class UnaryMinus(Expression):
 	def __init__(self, expr):
@@ -315,6 +325,8 @@ class UnaryMinus(Expression):
 		self.expr = expr
 	def __repr__(self):
 		return 'minus(%r)' % self.expr
+	def eval(self):
+		return -self.expr.eval()
 
 class BinaryOp(Expression):
 	def __init__(self, lhs, rhs, op):
@@ -323,6 +335,29 @@ class BinaryOp(Expression):
 		self.lhs, self.rhs, self.op = lhs, rhs, op
 	def __repr__(self):
 		return '(%s %r %r)' % (self.op, self.lhs, self.rhs)
+	ops = {
+		'*': lambda a, b: a * b,
+		'/': lambda a, b: a / b,
+		'%': lambda a, b: a % b,
+		'+': lambda a, b: a + b,
+		'-': lambda a, b: a - b,
+		'<': lambda a, b: a < b,
+		'<=': lambda a, b: a <= b,
+		'>': lambda a, b: a > b,
+		'>=': lambda a, b: a >= b,
+		'in': lambda a, b: NotImplemented,
+		'==': lambda a, b: a == b,
+		'!=': lambda a, b: a != b,
+		'=': lambda a, b: NotImplemented,
+		'+=': lambda a, b: NotImplemented,
+		'-=': lambda a, b: NotImplemented,
+		'*=': lambda a, b: NotImplemented,
+		'/=': lambda a, b: NotImplemented,
+		'%=': lambda a, b: NotImplemented
+	}
+
+	def eval(self):
+		return BinaryOp.ops[self.op](self.lhs.eval(), self.rhs.eval())
 
 class MulOp(BinaryOp):
 	def __init__(self, lhs, rhs, op):
@@ -346,7 +381,7 @@ class EqOp(BinaryOp):
 
 class AssignOp(BinaryOp):
 	def __init__(self, lhs, rhs, op):
-		assert(op in ['=', '+=', '*=', '/=', '%='])
+		assert(op in ['=', '+=', '-=', '*=', '/=', '%='])
 		BinaryOp.__init__(self, lhs, rhs, op)
 
 class If(Statement):
@@ -361,6 +396,11 @@ class If(Statement):
 		if self.elseBody != None:
 			e = ' else %r' % self.elseBody
 		return '(if (%r) %r%s)' % (self.condition, self.body, e)
+	def eval(self):
+		if condition.eval():
+			body.eval()
+		elif elseBody != None:
+			elseBody.eval()
 
 class While(Statement):
 	def __init__(self, condition, body):
@@ -637,9 +677,11 @@ class Parser:
 		return Block(statements)
 
 	def parse(self):
-		program = self.statement()
+		statements = []
+		while self.tokenType != TokenType.EOF:
+			statements.append(self.statement())
 		self.match(TokenType.EOF)
-		return program
+		return statements
 
 def testParser():
 	testCases = [
@@ -818,6 +860,11 @@ def testLexer():
 			print('FAIL: expected error', source)
 		except:
 			pass
+
+def evaluate(source):
+	program = Parser(source).parse()
+	for statement in program:
+		print(statement.eval())
 
 '''
 Grammar
