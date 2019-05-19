@@ -486,7 +486,7 @@ class Parser:
 		# Operators in order of increasing precedence
 		# op token type, op class, isLeftAssociative
 		precedenceLevels = [
-			# (TokenType.ASSIGN_OP, AssignOp, False),
+			(TokenType.ASSIGN_OP, AssignOp, False),
 			(TokenType.EQ_OP, EqOp, True),
 			(TokenType.REL_OP, RelOp, True),
 			(TokenType.ADD_OP, AddOp, True),
@@ -497,15 +497,19 @@ class Parser:
 			if i == len(precedenceLevels):
 				return self.factor()
 			tokenType, opClass, isLeftAssociative = precedenceLevels[i]
-			if not isLeftAssociative:
-				raise NotImplemented
 
 			expr = level(i + 1)
-			while self.tokenType == tokenType:
+			if isLeftAssociative:
+				while self.tokenType == tokenType:
+					op = self.tokenValue
+					self.match(tokenType)
+					rhs = level(i + 1)
+					expr = opClass(expr, rhs, op)
+			elif self.tokenType == tokenType:
 				op = self.tokenValue
 				self.match(tokenType)
-				rhs = level(i + 1)
-				expr = opClass(expr, rhs, op)
+				return opClass(expr, level(i), op)
+
 			return expr
 
 		return level(0)
@@ -548,7 +552,8 @@ def testParser():
 		('2 * 3 + 4 < 5 - 6/7',),
 		('order["item"] in prices',),
 		('x1 > y1 == x2 > y2',),
-		#('b += a = 2 * 3 + 4 < 5 - 6/7',),
+		('a = b = c',),
+		('b += a = 2 * 3 + 4 < 5 - 6/7',),
 	]
 
 	for testCase in testCases:
