@@ -251,6 +251,13 @@ class Identifier(Expression):
 	def __repr__(self):
 		return 'id(%s)' % self.name
 
+class MemberAccess(Expression):
+	def __init__(self, obj, member):
+		assert(isinstance(member, Expression))
+		self.obj, self.member = obj, member
+	def __repr__(self):
+		return '%r[%r]' % (self.obj, self.member)
+
 class Function(Expression):
 	def __init__(self, params, body, env=None):
 		paramNames = set()
@@ -293,7 +300,7 @@ class Parser:
 		return self.expression()
 
 	def expression(self):
-		return self.atom()
+		return self.unit()
 
 	def block(self):
 		statements = []
@@ -327,6 +334,28 @@ class Parser:
 		self.match(TokenType.CLOSE_PAREN)
 		body = self.block()
 		return Function(parameters, body)
+
+	def unit(self):
+		'''
+		Unit -> Atom | MemberAccess | FunctionCall
+		MemberAccess -> Atom '[' Expression ']'
+		FunctionCall -> Atom '(' ParameterValues ')'
+		ParameterValues -> epsilon | Expression {',' Expression }*
+		'''
+		u = self.atom()
+		# Member access and function calls can be chained
+		while self.tokenType in [TokenType.OPEN_BRACKET, TokenType.OPEN_PAREN]:
+			if self.tokenType == TokenType.OPEN_BRACKET:
+				self.match(TokenType.OPEN_BRACKET)
+				member = self.expression()
+				self.match(TokenType.CLOSE_BRACKET)
+				u = MemberAccess(u, member)
+			else:
+				self.match(TokenType.OPEN_PAREN)
+				# TODO: function call parameters
+				raise NotImplemented
+				self.match(TokenType.CLOSE_PAREN)
+		return u
 
 	def atom(self):
 		'''
@@ -371,6 +400,16 @@ def testParser():
 		('function(a){}',),
 		('function(a, b, c){}',),
 		('(1)',),
+		('a["hi"]',),
+		('a["users"]["adrian"]',),
+		('a("hi")',),
+		('a("hi", 4, 8)',),
+		('a["callbacks"]["error"]()',),
+		('a["callbacks"]["error"](404, "Not found")',),
+		('function(){}()',),
+		('a[function(){}]',),
+		('a[function(){}()]',),
+		('function(a, b, c){}(1, 2, 3)',),
 	]
 
 	for testCase in testCases:
@@ -385,6 +424,9 @@ def testParser():
 		('function(7){}', 'invalid paramenter list'),
 		('function(a, b,){}', 'invalid paramenter list'),
 		('function(a, b, a){}', 'invalid parameter list'),
+		('a("hi"', 'no closing paren in call'),
+		('a("hi", 2, 3', 'no closing paren in call'),
+		('a["hi"', 'no closing brace in member access'),
 	]
 
 	for source, description in invalid:
@@ -494,7 +536,7 @@ Unit -> Atom | MemberAccess | FunctionCall
 
 Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
 
-FunctionCall -> Expression '(' ParameterValues ')'
+FunctionCall -> Atom '(' ParameterValues ')'
 ParameterValues -> epsilon | Expression {',' Expression }*
 
 MemberAccess -> Atom '[' Expression ']'
