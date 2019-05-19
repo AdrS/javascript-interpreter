@@ -386,6 +386,19 @@ class Continue(Statement):
 	def __repr__(self):
 		return 'continue'
 
+class Declaration(Statement):
+	# TODO: use Null instead of none for default expression values
+	def __init__(self, name, initializer=None):
+		assert(isinstance(name, Identifier))
+		if initializer:
+			assert(isinstance(initializer, Expression))
+		self.name, self.initializer = name, initializer
+	def __repr__(self):
+		i = ''
+		if self.initializer != None:
+			i = ' = %r' % self.initializer
+		return 'var %s%s' % (self.name.name, i)
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
@@ -565,6 +578,17 @@ class Parser:
 		body = self.statement()
 		return While(condition, body)
 
+	def declaration(self):
+		self.match(TokenType.VAR)
+		name = self.tokenValue
+		self.match(TokenType.IDENTIFIER)
+		value = None
+		if self.tokenType == TokenType.ASSIGN_OP and self.tokenValue == '=':
+			self.match(TokenType.ASSIGN_OP)
+			value = self.expression()
+		self.match(TokenType.SEMICOLON)
+		return Declaration(Identifier(name), value)
+
 	def statement(self):
 		'''
 		Statement -> Declaration | Block | IfStatement | WhileStatement
@@ -576,7 +600,8 @@ class Parser:
 		ContinueStatement  -> 'continue' ';'
 		ReturnStatement -> 'return' [ Expression ] ';'
 		'''
-		# TODO:
+		if self.tokenType == TokenType.VAR:
+			return self.declaration()
 		if self.tokenType == TokenType.OPEN_BRACE:
 			return self.block()
 		if self.tokenType == TokenType.IF:
@@ -662,6 +687,9 @@ def testParser():
 		('function(x) { return x + 1; }(0);',),
 		('while(i < length) { if(a[i] == x) break; i = i + 1;}',),
 		('{ i = length; while(i > 0) { i = i - 1; if(a[i] % 2 == 1) continue; a[i] = -a[i]; } }',),
+		('var a;',),
+		('var a = 0;',),
+		('var f = function(x) { return x + 1;};',),
 	]
 
 	for testCase in testCases:
@@ -712,6 +740,11 @@ def testParser():
 		('continue ;','continue statement outside of loop'),
 		('function() { break ; }();','Break statement outside of loop'),
 		('function() { continue ; }();','Continue statement outside of loop'),
+		('var ','no variable name'),
+		('var ;', 'no variable name'),
+		('var a', 'no semicolon'),
+		('var a = ;', 'no initialization expression'),
+		('var f = function(x) { return x + 1};', 'invalid expression'),
 	]
 
 	for source, description in invalid:
