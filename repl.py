@@ -9,41 +9,45 @@ class TokenType(enum.Enum):
 	ELSE = 3
 	WHILE = 4
 	RETURN = 5
-	IDENTIFIER = 6
-	NUMBER = 7
-	STRING = 8
-	BOOL = 9
-	NULL = 10
-	OPEN_PAREN = 11
-	CLOSE_PAREN = 12
-	OPEN_BRACE = 13
-	CLOSE_BRACE = 14
-	OPEN_BRACKET = 15
-	CLOSE_BRACKET = 16
-	SEMICOLON = 17
-	MUL_OP = 18
-	ADD_OP = 19
-	REL_OP = 20
-	EQ_OP = 21
-	NOT = 22
-	ASSIGN_OP = 23
-	COMMA = 24
-	AND_OP = 25
-	OR_OP = 26
-	EOF = 27
+	BREAK = 6
+	CONTINUE = 7
+	IDENTIFIER = 8
+	NUMBER = 9
+	STRING = 10
+	BOOL = 11
+	NULL = 12
+	OPEN_PAREN = 13
+	CLOSE_PAREN = 14
+	OPEN_BRACE = 15
+	CLOSE_BRACE = 16
+	OPEN_BRACKET = 17
+	CLOSE_BRACKET = 18
+	SEMICOLON = 19
+	MUL_OP = 20
+	ADD_OP = 21
+	REL_OP = 22
+	EQ_OP = 23
+	NOT = 24
+	ASSIGN_OP = 25
+	COMMA = 26
+	AND_OP = 27
+	OR_OP = 28
+	EOF = 29
 
 class Lexer:
 	reservedWords = {
-		'true'   : (TokenType.BOOL,     True),
-		'false'  : (TokenType.BOOL,     False),
-		'null'   : (TokenType.NULL,     None),
-		'var'    : (TokenType.VAR,      None),
-		'function': (TokenType.FUNCTION, None),
-		'if'     : (TokenType.IF,       None),
-		'else'   : (TokenType.ELSE,     None),
-		'in'     : (TokenType.REL_OP,   'in'),
-		'while'  : (TokenType.WHILE,    None),
-		'return' : (TokenType.RETURN,   None)
+		'true'     : (TokenType.BOOL,     True),
+		'false'    : (TokenType.BOOL,     False),
+		'null'     : (TokenType.NULL,     None),
+		'var'      : (TokenType.VAR,      None),
+		'function' : (TokenType.FUNCTION, None),
+		'if'       : (TokenType.IF,       None),
+		'else'     : (TokenType.ELSE,     None),
+		'in'       : (TokenType.REL_OP,   'in'),
+		'while'    : (TokenType.WHILE,    None),
+		'return'   : (TokenType.RETURN,   None),
+		'break'    : (TokenType.BREAK,    None),
+		'continue' : (TokenType.CONTINUE, None)
 	}
 
 	operators = {
@@ -374,6 +378,14 @@ class Return(Statement):
 	def __repr__(self):
 		return 'return %r' % self.expr
 
+class Break(Statement):
+	def __repr__(self):
+		return 'break'
+
+class Continue(Statement):
+	def __repr__(self):
+		return 'continue'
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
@@ -555,7 +567,13 @@ class Parser:
 
 	def statement(self):
 		'''
-		Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression ';'
+		Statement -> Declaration | Block | IfStatement | WhileStatement
+					| ReturnStatement | Expression ';'
+					| BreakStatement
+					| ContinueStatement
+
+		BreakStatement -> 'break' ';'
+		ContinueStatement  -> 'continue' ';'
 		ReturnStatement -> 'return' [ Expression ] ';'
 		'''
 		# TODO:
@@ -572,6 +590,14 @@ class Parser:
 				expr = self.expression()
 			self.match(TokenType.SEMICOLON)
 			return Return(expr)
+		if self.tokenType == TokenType.BREAK:
+			self.match(TokenType.BREAK)
+			self.match(TokenType.SEMICOLON)
+			return Break()
+		if self.tokenType == TokenType.CONTINUE:
+			self.match(TokenType.CONTINUE)
+			self.match(TokenType.SEMICOLON)
+			return Continue()
 
 		e = self.expression()
 		self.match(TokenType.SEMICOLON)
@@ -634,6 +660,8 @@ def testParser():
 		('while(x > 1)  if(x % 2 == 0) x = x/2; else x = 3*x + 1;',),
 		('function(x) { return; }(0);',),
 		('function(x) { return x + 1; }(0);',),
+		('while(i < length) { if(a[i] == x) break; i = i + 1;}',),
+		('{ i = length; while(i > 0) { i = i - 1; if(a[i] % 2 == 1) continue; a[i] = -a[i]; } }',),
 	]
 
 	for testCase in testCases:
@@ -680,6 +708,10 @@ def testParser():
 		('function(x) { return }', 'invalid return'),
 		('function(x) { return return; }', 'invalid return'),
 		('return ;','Return statement outside of function'),
+		('break ;','Break statement outside of loop'),
+		('continue ;','continue statement outside of loop'),
+		('function() { break ; }();','Break statement outside of loop'),
+		('function() { continue ; }();','Continue statement outside of loop'),
 	]
 
 	for source, description in invalid:
@@ -760,7 +792,13 @@ Grammar
 Program -> StatementList
 Block -> '{' StatementList '}'
 StatementList -> { Statement }*
-Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression ';'
+Statement -> Declaration | Block | IfStatement | WhileStatement
+			| ReturnStatement | Expression ';'
+			| BreakStatement
+			| ContinueStatement
+
+BreakStatement -> 'break' ';'
+Continue  -> 'continue' ';'
 
 Declaration -> 'var' Identifier [ '=' Expression ] ';'
 IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
