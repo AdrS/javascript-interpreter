@@ -258,6 +258,15 @@ class MemberAccess(Expression):
 	def __repr__(self):
 		return '%r[%r]' % (self.obj, self.member)
 
+class Call(Expression):
+	def __init__(self, fun, args):
+		for arg in args:
+			assert(isinstance(arg, Expression))
+		self.fun, self.args = fun, args
+	def __repr__(self):
+		args = ', '.join(a.__repr__() for a in self.args)
+		return 'call(%r, %s)' % (self.fun, args)
+
 class Function(Expression):
 	def __init__(self, params, body, env=None):
 		paramNames = set()
@@ -339,8 +348,8 @@ class Parser:
 		'''
 		Unit -> Atom | MemberAccess | FunctionCall
 		MemberAccess -> Atom '[' Expression ']'
-		FunctionCall -> Atom '(' ParameterValues ')'
-		ParameterValues -> epsilon | Expression {',' Expression }*
+		FunctionCall -> Atom '(' Arguments ')'
+		Arguments -> epsilon | Expression {',' Expression }*
 		'''
 		u = self.atom()
 		# Member access and function calls can be chained
@@ -352,9 +361,15 @@ class Parser:
 				u = MemberAccess(u, member)
 			else:
 				self.match(TokenType.OPEN_PAREN)
-				# TODO: function call parameters
-				raise NotImplemented
+				# Parse arguments
+				args = []
+				if self.tokenType != TokenType.CLOSE_PAREN:
+					args.append(self.expression())
+					while self.tokenType == TokenType.COMMA:
+						self.match(TokenType.COMMA)
+						args.append(self.expression())
 				self.match(TokenType.CLOSE_PAREN)
+				u = Call(u, args)
 		return u
 
 	def atom(self):
@@ -536,8 +551,8 @@ Unit -> Atom | MemberAccess | FunctionCall
 
 Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
 
-FunctionCall -> Atom '(' ParameterValues ')'
-ParameterValues -> epsilon | Expression {',' Expression }*
+FunctionCall -> Atom '(' Arguments ')'
+Arguments -> epsilon | Expression {',' Expression }*
 
 MemberAccess -> Atom '[' Expression ']'
 
