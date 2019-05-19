@@ -6,30 +6,31 @@ class TokenType(enum.Enum):
 	VAR = 0
 	FUNCTION = 1
 	IF = 2
-	WHILE = 3
-	RETURN = 4
-	IDENTIFIER = 5
-	NUMBER = 6
-	STRING = 7
-	BOOL = 8
-	NULL = 9
-	OPEN_PAREN = 10
-	CLOSE_PAREN = 11
-	OPEN_BRACE = 12
-	CLOSE_BRACE = 13
-	OPEN_BRACKET = 14
-	CLOSE_BRACKET = 15
-	SEMICOLON = 16
-	MUL_OP = 17
-	ADD_OP = 18
-	REL_OP = 19
-	EQ_OP = 20
-	NOT = 21
-	ASSIGN_OP = 22
-	COMMA = 23
-	AND_OP = 24
-	OR_OP = 25
-	EOF = 26
+	ELSE = 3
+	WHILE = 4
+	RETURN = 5
+	IDENTIFIER = 6
+	NUMBER = 7
+	STRING = 8
+	BOOL = 9
+	NULL = 10
+	OPEN_PAREN = 11
+	CLOSE_PAREN = 12
+	OPEN_BRACE = 13
+	CLOSE_BRACE = 14
+	OPEN_BRACKET = 15
+	CLOSE_BRACKET = 16
+	SEMICOLON = 17
+	MUL_OP = 18
+	ADD_OP = 19
+	REL_OP = 20
+	EQ_OP = 21
+	NOT = 22
+	ASSIGN_OP = 23
+	COMMA = 24
+	AND_OP = 25
+	OR_OP = 26
+	EOF = 27
 
 class Lexer:
 	reservedWords = {
@@ -39,6 +40,7 @@ class Lexer:
 		'var'    : (TokenType.VAR,      None),
 		'function': (TokenType.FUNCTION, None),
 		'if'     : (TokenType.IF,       None),
+		'else'   : (TokenType.ELSE,     None),
 		'in'     : (TokenType.REL_OP,   'in'),
 		'while'  : (TokenType.WHILE,    None),
 		'return' : (TokenType.RETURN,   None)
@@ -218,7 +220,10 @@ class Lexer:
 			tokens.append(t)
 		return tokens
 
-class Expression:
+class Statement:
+	pass
+
+class Expression(Statement):
 	pass
 
 class Number(Expression):
@@ -269,7 +274,7 @@ class Call(Expression):
 		args = ', '.join(a.__repr__() for a in self.args)
 		return 'call(%r, %s)' % (self.fun, args)
 
-class Block:
+class Block(Statement):
 	def __init__(self, statements):
 		self.statements = statements
 	def __repr__(self):
@@ -280,10 +285,12 @@ class Function(Expression):
 	def __init__(self, params, body, env=None):
 		paramNames = set()
 		for param in params:
+			assert(type(param) == Identifier)
 			if param.name in paramNames:
 				raise Exception('Repeated function parameter name %r' % param.name)
 			paramNames.add(param.name)
 		# TODO: how to handle environment (closures ...)
+		assert(type(body) == Block)
 		self.params = params
 		self.body = body
 
@@ -338,6 +345,35 @@ class AssignOp(BinaryOp):
 		assert(op in ['=', '+=', '*=', '/=', '%='])
 		BinaryOp.__init__(self, lhs, rhs, op)
 
+class If(Statement):
+	def __init__(self, condition, body, elseBody=None):
+		assert(isinstance(condition, Expression))
+		assert(isinstance(body, Statement))
+		if elseBody:
+			assert(isinstance(elseBody, Statement))
+		self.condition, self.body, self.elseBody = condition, body, elseBody
+	def __repr__(self):
+		e = ''
+		if self.elseBody != None:
+			e = ' else %r' % self.elseBody
+		return '(if (%r) %r%s)' % (self.condition, self.body, e)
+
+class While(Statement):
+	def __init__(self, condition, body):
+		assert(isinstance(condition, Expression))
+		assert(isinstance(body, Statement))
+		self.condition, self.body = condition, body
+	def __repr__(self):
+		return '(while (%r) %r)' % (self.condition, self.body)
+
+class Return(Statement):
+	def __init__(self, expr=None):
+		if expr != None:
+			assert(isinstance(expr, Expression))
+		self.expr = expr
+	def __repr__(self):
+		return 'return %r' % self.expr
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
@@ -347,23 +383,6 @@ class Parser:
 		if self.tokenType != c:
 			raise Exception('expected token of type %r not %r (%r)' % (c, self.tokenValue, self.tokenValue))
 		self.tokenType, self.tokenValue = self.lexer.lexan()
-
-	def statement(self):
-		'''
-		Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression
-		'''
-		# TODO:
-		if self.tokenType == TokenType.OPEN_BRACE:
-			return self.block()
-		return self.expression()
-
-	def block(self):
-		statements = []
-		self.match(TokenType.OPEN_BRACE)
-		while self.tokenType != TokenType.CLOSE_BRACE:
-			statements.append(self.statement)
-		self.match(TokenType.CLOSE_BRACE)
-		return Block(statements)
 
 	def identifier(self):
 		i = Identifier(self.tokenValue)
@@ -514,6 +533,50 @@ class Parser:
 
 		return level(0)
 
+	def ifStatement(self):
+		self.match(TokenType.IF)
+		self.match(TokenType.OPEN_PAREN)
+		condition = self.expression()
+		self.match(TokenType.CLOSE_PAREN)
+		body = self.statement()
+		elseBody = None
+		if self.tokenType == TokenType.ELSE:
+			self.match(TokenType.ELSE)
+			elseBody = self.statement()
+		return If(condition, body, elseBody)
+
+	def whileStatement(self):
+		self.match(TokenType.WHILE)
+		self.match(TokenType.OPEN_PAREN)
+		condition = self.expression()
+		self.match(TokenType.CLOSE_PAREN)
+		body = self.statement()
+		return While(condition, body)
+
+	def statement(self):
+		'''
+		Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression ';'
+		'''
+		# TODO:
+		if self.tokenType == TokenType.OPEN_BRACE:
+			return self.block()
+		if self.tokenType == TokenType.IF:
+			return self.ifStatement()
+		if self.tokenType == TokenType.WHILE:
+			return self.whileStatement()
+
+		e = self.expression()
+		self.match(TokenType.SEMICOLON)
+		return e
+
+	def block(self):
+		statements = []
+		self.match(TokenType.OPEN_BRACE)
+		while self.tokenType != TokenType.CLOSE_BRACE:
+			statements.append(self.statement)
+		self.match(TokenType.CLOSE_BRACE)
+		return Block(statements)
+
 	def parse(self):
 		program = self.statement()
 		self.match(TokenType.EOF)
@@ -521,39 +584,46 @@ class Parser:
 
 def testParser():
 	testCases = [
-		('0',),
-		('\'hello\'',),
-		('a',),
-		('true',),
-		('false',),
-		('null',),
-		('function(){}',),
-		('function(a){}',),
-		('function(a, b, c){}',),
-		('(1)',),
-		('a["hi"]',),
-		('a["users"]["adrian"]',),
-		('a("hi")',),
-		('a("hi", 4, 8)',),
-		('a["callbacks"]["error"]()',),
-		('a["callbacks"]["error"](404, "Not found")',),
-		('function(){}()',),
-		('a[function(){}]',),
-		('a[function(){}()]',),
-		('function(a, b, c){}(1, 2, 3)',),
-		('!!!!true',),
-		('- - -7',),
-		('- + +7',),
-		('-8',),
-		('!-8',),
-		('-!0',),
-		('71 * -8 / +2 % 10',),
-		('order["quantity"] * prices[order["item"]]', ),
-		('2 * 3 + 4 < 5 - 6/7',),
-		('order["item"] in prices',),
-		('x1 > y1 == x2 > y2',),
-		('a = b = c',),
-		('b += a = 2 * 3 + 4 < 5 - 6/7',),
+		('0;',),
+		('\'hello\';',),
+		('a;',),
+		('true;',),
+		('false;',),
+		('null;',),
+		('function(){};',),
+		('function(a){};',),
+		('function(a, b, c){};',),
+		('(1);',),
+		('a["hi"];',),
+		('a["users"]["adrian"];',),
+		('a("hi");',),
+		('a("hi", 4, 8);',),
+		('a["callbacks"]["error"]();',),
+		('a["callbacks"]["error"](404, "Not found");',),
+		('function(){}();',),
+		('a[function(){}];',),
+		('a[function(){}()];',),
+		('function(a, b, c){}(1, 2, 3);',),
+		('!!!!true;',),
+		('- - -7;',),
+		('- + +7;',),
+		('-8;',),
+		('!-8;',),
+		('-!0;',),
+		('71 * -8 / +2 % 10;',),
+		('order["quantity"] * prices[order["item"]];', ),
+		('2 * 3 + 4 < 5 - 6/7;',),
+		('order["item"] in prices;',),
+		('x1 > y1 == x2 > y2;',),
+		('a = b = c;',),
+		('b += a = 2 * 3 + 4 < 5 - 6/7;',),
+		('if (x < 0) {}',),
+		('if (x < 0) {} else {}',),
+		('if (x < 0) {} else if(x > 0) {}',),
+		('if (x < 0) {} else if(x > 0) {} else {}',),
+		('while(x > 0) {}',),
+		('while(x > 0) x = x - 1;',),
+		('while(x > 1)  if(x % 2 == 0) x = x/2; else x = 3*x + 1;',),
 	]
 
 	for testCase in testCases:
@@ -578,7 +648,24 @@ def testParser():
 		('!!!', 'not without argument'),
 		('71 * -8 / +2 %', 'no modulus'),
 		('71 * -8 /', 'no divisor'),
-		('71 *', 'not rhs'),
+		('* 89', 'no lhs'),
+		('= 89', 'no lhs'),
+		('71 *', 'no rhs'),
+		('71 +', 'no rhs'),
+		('71 <=', 'no rhs'),
+		('71 =', 'no rhs'),
+		('if', 'invalid if'),
+		('if 8', 'invalid if'),
+		('if (8', 'invalid if: no close paren'),
+		('if (x < 0)', 'invalid if: no body'),
+		('if (x < 0) else', 'invalid if: no body'),
+		('if (x < 0) f(-x); else', 'invalid if: no body'),
+		('if (x < 0) {} else', 'no body for else'),
+		('while','no loop condition'),
+		('while ) {}', 'no open paren'),
+		('while (x {}', 'no close paren'),
+		('while (x)', 'no body'),
+		('while() {}', 'no loop condition'),
 	]
 
 	for source, description in invalid:
@@ -659,7 +746,7 @@ Grammar
 Program -> StatementList
 Block -> '{' StatementList '}'
 StatementList -> { Statement }*
-Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression
+Statement -> Declaration | Block | IfStatement | WhileStatement | ReturnStatement | Expression ';'
 
 Declaration -> 'var' Identifier [ '=' Expression ] ';'
 IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
