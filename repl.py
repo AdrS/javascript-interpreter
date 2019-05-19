@@ -39,6 +39,7 @@ class Lexer:
 		'var'    : (TokenType.VAR,      None),
 		'function': (TokenType.FUNCTION, None),
 		'if'     : (TokenType.IF,       None),
+		'in'     : (TokenType.REL_OP,   'in'),
 		'while'  : (TokenType.WHILE,    None),
 		'return' : (TokenType.RETURN,   None)
 	}
@@ -304,14 +305,38 @@ class UnaryMinus(Expression):
 	def __repr__(self):
 		return 'minus(%r)' % self.expr
 
-class MulOp(Expression):
+class BinaryOp(Expression):
 	def __init__(self, lhs, rhs, op):
 		assert(isinstance(lhs, Expression))
 		assert(isinstance(rhs, Expression))
-		assert(op in '*/%')
 		self.lhs, self.rhs, self.op = lhs, rhs, op
 	def __repr__(self):
 		return '(%s %r %r)' % (self.op, self.lhs, self.rhs)
+
+class MulOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op in '*/%')
+		BinaryOp.__init__(self, lhs, rhs, op)
+
+class AddOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op in '+-')
+		BinaryOp.__init__(self, lhs, rhs, op)
+
+class RelOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op in ['<', '<=', '>', '>=', 'in'])
+		BinaryOp.__init__(self, lhs, rhs, op)
+
+class EqOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op in ['==', '!='])
+		BinaryOp.__init__(self, lhs, rhs, op)
+
+class AssignOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op in ['=', '+=', '*=', '/=', '%='])
+		BinaryOp.__init__(self, lhs, rhs, op)
 
 class Parser:
 	def __init__(self, s):
@@ -331,9 +356,6 @@ class Parser:
 		if self.tokenType == TokenType.OPEN_BRACE:
 			return self.block()
 		return self.expression()
-
-	def expression(self):
-		return self.term()
 
 	def block(self):
 		statements = []
@@ -443,18 +465,50 @@ class Parser:
 
 		return self.unit()
 
-	def term(self):
+	def expression(self):
+		# TODO: comma expression (typically used in for loops)
 		'''
+		Assignment -> EqExpression AssignOp Expression
+		AssignOp -> '=' | '+=' | '-=' | '*=' | '/=' | '%='
+
+		EqExpression -> RelationalExpression { EqOp EqExpression }*
+		EqOp -> '==' | '!='
+
+		RelationalExpression -> ArithematicExpression { RelOp ArithematicExpression }*
+		RelOp -> '<' | '<=' | '>' | '>=' | 'in'
+
+		ArithematicExpression -> Term { AddOp Term }*
+		AddOp -> '+' | '-'
+
 		Term -> Factor { MulOp Factor }*
 		MulOp -> '*' | '/' | '%'
 		'''
-		t = self.factor()
-		while self.tokenType == TokenType.MUL_OP:
-			op = self.tokenValue
-			self.match(TokenType.MUL_OP)
-			f = self.factor()
-			t = MulOp(t, f, op)
-		return t
+		# Operators in order of increasing precedence
+		# op token type, op class, isLeftAssociative
+		precedenceLevels = [
+			# (TokenType.ASSIGN_OP, AssignOp, False),
+			(TokenType.EQ_OP, EqOp, True),
+			(TokenType.REL_OP, RelOp, True),
+			(TokenType.ADD_OP, AddOp, True),
+			(TokenType.MUL_OP, MulOp, True)
+		]
+
+		def level(i):
+			if i == len(precedenceLevels):
+				return self.factor()
+			tokenType, opClass, isLeftAssociative = precedenceLevels[i]
+			if not isLeftAssociative:
+				raise NotImplemented
+
+			expr = level(i + 1)
+			while self.tokenType == tokenType:
+				op = self.tokenValue
+				self.match(tokenType)
+				rhs = level(i + 1)
+				expr = opClass(expr, rhs, op)
+			return expr
+
+		return level(0)
 
 	def parse(self):
 		program = self.statement()
@@ -491,6 +545,10 @@ def testParser():
 		('-!0',),
 		('71 * -8 / +2 % 10',),
 		('order["quantity"] * prices[order["item"]]', ),
+		('2 * 3 + 4 < 5 - 6/7',),
+		('order["item"] in prices',),
+		('x1 > y1 == x2 > y2',),
+		#('b += a = 2 * 3 + 4 < 5 - 6/7',),
 	]
 
 	for testCase in testCases:
@@ -611,7 +669,7 @@ EqExpression -> RelationalExpression { EqOp EqExpression }*
 EqOp -> '==' | '!='
 
 RelationalExpression -> ArithematicExpression { RelOp ArithematicExpression }*
-RelOp -> '<' | '<=' | '>' | '>='
+RelOp -> '<' | '<=' | '>' | '>=' | 'in'
 
 ArithematicExpression -> Term { AddOp Term }*
 AddOp -> '+' | '-'
