@@ -119,12 +119,19 @@ class Lexer:
 			elif c == '/':
 				c = self.getchar()
 
-				# TODO: multiline comments
 				# Single line comment
 				if c == '/':
 					while c != '' and c != '\n':
 						c = self.getchar()
-					continue
+				elif c == '*':
+					# Multiline comments
+					while True:
+						c = self.getchar(True)
+						while c != '*':
+							c = self.getchar(True)
+						c = self.getchar(True)
+						if c == '/':
+							break
 				elif c == '=':
 					return (Lexer.operators['/='], '/=')
 				else:
@@ -208,6 +215,13 @@ class Lexer:
 
 class Parser:
 	def __init__(self, s):
+		self.lexer = Lexer(s)
+		self.lookahead = None
+
+	def match(self, c):
+		pass
+
+	def atom(self):
 		pass
 
 def testLexer():
@@ -244,6 +258,12 @@ def testLexer():
 		# Comments
 		('a//hello people', [(TokenType.IDENTIFIER, 'a')]),
 		('//hello people\n123', [(TokenType.NUMBER, 123)]),
+		# Multi-line Comments
+		('a /*hello people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
+		('a /*hello * people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
+		('a /*hello /* people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
+		('a /*hello * //people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
+		('a//hello people', [(TokenType.IDENTIFIER, 'a')]),
 		# Operators
 	]
 
@@ -251,15 +271,25 @@ def testLexer():
 		got = Lexer(source).tokenize()
 		if got != expected:
 			print('FAIL', source, got, expected)
-		else:
-			print('PASS', source)
 
 	invalid = [
 		'.234',
 		'123.',
 		'093',
 		'123a',
+		'/*',
+		'/*adsf*'
 	]
+	for source in invalid:
+		try:
+			got = Lexer(source).tokenize()
+			print('FAIL: expected error', source)
+		except:
+			pass
+
+class Parser:
+	def __init__(s):
+		self.lexer = Lexer(s)
 
 def testParser():
 	pass
@@ -277,9 +307,9 @@ IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
 WhileStatement -> 'while '(' Expression ')' Statement
 ReturnStatement -> 'return' [ Expression ] ';'
 
-Expression -> EqExpression ////| Assignment
+Expression -> EqExpression | Assignment
 
-///////Assignment -> EqExpression '=' Expression
+Assignment -> EqExpression '=' Expression
 
 EqExpression -> RelationalExpression { EqOp EqExpression }*
 EqOp -> '==' | '!='
