@@ -267,6 +267,13 @@ class Call(Expression):
 		args = ', '.join(a.__repr__() for a in self.args)
 		return 'call(%r, %s)' % (self.fun, args)
 
+class Block:
+	def __init__(self, statements):
+		self.statements = statements
+	def __repr__(self):
+		r = '\n'.join(s.__repr__() for s in self.statements)
+		return '{ %s }' % r
+
 class Function(Expression):
 	def __init__(self, params, body, env=None):
 		paramNames = set()
@@ -282,12 +289,19 @@ class Function(Expression):
 		paramsRep = ', '.join(p.__repr__() for p in self.params)
 		return 'function(%s)%r' % (paramsRep, self.body)
 
-class Block:
-	def __init__(self, statements):
-		self.statements = statements
+class Not(Expression):
+	def __init__(self, expr):
+		assert(isinstance(expr, Expression))
+		self.expr = expr
 	def __repr__(self):
-		r = '\n'.join(s.__repr__() for s in self.statements)
-		return '{ %s }' % r
+		return 'not(%r)' % self.expr
+
+class UnaryMinus(Expression):
+	def __init__(self, expr):
+		assert(isinstance(expr, Expression))
+		self.expr = expr
+	def __repr__(self):
+		return 'minus(%r)' % self.expr
 
 class Parser:
 	def __init__(self, s):
@@ -309,7 +323,7 @@ class Parser:
 		return self.expression()
 
 	def expression(self):
-		return self.unit()
+		return self.factor()
 
 	def block(self):
 		statements = []
@@ -344,6 +358,32 @@ class Parser:
 		body = self.block()
 		return Function(parameters, body)
 
+	def atom(self):
+		'''
+		Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
+		'''
+		if self.tokenType == TokenType.NUMBER:
+			e = Number(self.tokenValue)
+			self.match(TokenType.NUMBER)
+		elif self.tokenType == TokenType.STRING:
+			e = String(self.tokenValue)
+			self.match(TokenType.STRING)
+		elif self.tokenType == TokenType.IDENTIFIER:
+			return self.identifier()
+		elif self.tokenType == TokenType.BOOL:
+			e = Bool(self.tokenValue)
+			self.match(TokenType.BOOL)
+		elif self.tokenType == TokenType.NULL:
+			e = Null()
+			self.match(TokenType.NULL)
+		elif self.tokenType == TokenType.FUNCTION:
+			return self.function()
+		else:
+			self.match(TokenType.OPEN_PAREN)
+			e = self.expression()
+			self.match(TokenType.CLOSE_PAREN)
+		return e
+
 	def unit(self):
 		'''
 		Unit -> Atom | MemberAccess | FunctionCall
@@ -372,31 +412,26 @@ class Parser:
 				u = Call(u, args)
 		return u
 
-	def atom(self):
+	def factor(self):
 		'''
-		Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
+		Factor -> '!' Factor | '-' Factor | Unit
 		'''
-		if self.tokenType == TokenType.NUMBER:
-			e = Number(self.tokenValue)
-			self.match(TokenType.NUMBER)
-		elif self.tokenType == TokenType.STRING:
-			e = String(self.tokenValue)
-			self.match(TokenType.STRING)
-		elif self.tokenType == TokenType.IDENTIFIER:
-			return self.identifier()
-		elif self.tokenType == TokenType.BOOL:
-			e = Bool(self.tokenValue)
-			self.match(TokenType.BOOL)
-		elif self.tokenType == TokenType.NULL:
-			e = Null()
-			self.match(TokenType.NULL)
-		elif self.tokenType == TokenType.FUNCTION:
-			return self.function()
-		else:
-			self.match(TokenType.OPEN_PAREN)
-			e = self.expression()
-			self.match(TokenType.CLOSE_PAREN)
-		return e
+		# Right to left associative
+		if self.tokenType == TokenType.NOT:
+			self.match(TokenType.NOT)
+			return Not(self.factor())
+
+		if self.tokenType == TokenType.ADD_OP:
+			if self.tokenValue == '-':
+				self.match(TokenType.ADD_OP)
+				return UnaryMinus(self.factor())
+			elif self.tokenValue == '+':
+				self.match(TokenType.ADD_OP)
+				return self.factor()
+			else:
+				raise Exception("unknown add op")
+
+		return self.unit()
 
 	def parse(self):
 		program = self.statement()
@@ -425,6 +460,12 @@ def testParser():
 		('a[function(){}]',),
 		('a[function(){}()]',),
 		('function(a, b, c){}(1, 2, 3)',),
+		('!!!!true',),
+		('- - -7',),
+		('- + +7',),
+		('-8',),
+		('!-8',),
+		('-!0',),
 	]
 
 	for testCase in testCases:
@@ -442,6 +483,11 @@ def testParser():
 		('a("hi"', 'no closing paren in call'),
 		('a("hi", 2, 3', 'no closing paren in call'),
 		('a["hi"', 'no closing brace in member access'),
+		('-', 'unary minus without argument'),
+		('- + - -', 'unary minus without argument'),
+		('+', 'unary plus without argument'),
+		('!', 'not without argument'),
+		('!!!', 'not without argument'),
 	]
 
 	for source, description in invalid:
@@ -545,7 +591,7 @@ AddOp -> '+' | '-'
 Term -> Factor { MulOp Factor }*
 MulOp -> '*' | '/' | '%'
 
-Factor -> '!' Unit | '-' Unit | Unit
+Factor -> '!' Factor | '-' Factor | Unit
 
 Unit -> Atom | MemberAccess | FunctionCall
 
