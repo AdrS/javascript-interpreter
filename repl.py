@@ -299,18 +299,26 @@ class ObjectLiteral(Expression):
 		return o
 
 class MemberAccess(Expression):
-	def __init__(self, obj, member):
-		assert(isinstance(member, Expression))
+	def __init__(self, obj, key):
+		assert(isinstance(key, Expression))
 		assert(isinstance(obj, Expression))
-		self.obj, self.member = obj, member
+		self.obj, self.key = obj, key
 	def __repr__(self):
-		return '%r[%r]' % (self.obj, self.member)
+		return '%r[%r]' % (self.obj, self.key)
 
 	def eval(self, environment):
-		# TODO: lvalue member access
-		# TODO: what order to evaluate?
-		key = self.member.eval(environment)
+		'''
+		$ // object is evaluated first, then key
+		$ var a = {};
+		$ function f() { console.log("f"); return a; };
+		$ function g() { console.log("g"); return "a";};
+		$ f()[g()];
+		f
+		g
+		$
+		'''
 		obj = self.obj.eval(environment)
+		key = self.key.eval(environment)
 		if type(obj) != Object:
 			raise Exception('non-objects do not have members')
 		return obj.get(key)
@@ -324,27 +332,50 @@ class Block(Statement):
 	def eval(self, environment):
 		environment = Environment(environment)
 		for statement in self.statements:
+			# TODO: remove print
 			print(statement.eval(environment))
 
-class Function(Expression):
-	def __init__(self, params, body, env=None):
+class Function:
+	def __init__(self, params, body, closure):
+		self.params = params
+		self.body = body
+		self.closure = closure
+
+	def __repr__(self):
+		paramsRep = ', '.join(self.params)
+		return 'function(%s)%r env: %r' % (paramsRep, self.body, self.closure)
+
+	def call(self, arguments):
+		environment = Environment(self.closure)
+		if len(arguments) != len(self.params):
+			raise Exception('wrong number of arguments')
+		for name, value in zip(self.params, arguments):
+			environment.create(name, value)
+		return self.body.eval(environment)
+
+class FunctionLiteral(Expression):
+	def __init__(self, params, body):
 		paramNames = set()
+		self.params = []
 		for param in params:
 			assert(type(param) == Identifier)
 			if param.name in paramNames:
 				raise Exception('Repeated function parameter name %r' % param.name)
 			paramNames.add(param.name)
-		# TODO: how to handle environment (closures ...)
+			self.params.append(param.name)
 		assert(type(body) == Block)
-		self.params = params
 		self.body = body
 
 	def __repr__(self):
-		paramsRep = ', '.join(p.__repr__() for p in self.params)
+		paramsRep = ', '.join(self.params)
 		return 'function(%s)%r' % (paramsRep, self.body)
+
+	def eval(self, environment):
+		return Function(self.params, self.body, environment)
 
 class Call(Expression):
 	def __init__(self, fun, args):
+		assert(isinstance(fun, Expression))
 		for arg in args:
 			assert(isinstance(arg, Expression))
 		self.fun, self.args = fun, args
@@ -352,6 +383,12 @@ class Call(Expression):
 	def __repr__(self):
 		args = ', '.join(a.__repr__() for a in self.args)
 		return 'call(%r, %s)' % (self.fun, args)
+
+	def eval(self, environment):
+		# TODO: which gets evaluated first? function or arguments
+		fun = self.fun.eval(environment)
+		assert(type(fun) == Function)
+		return fun.call([a.eval(environment) for a in self.args])
 
 class Not(Expression):
 	def __init__(self, expr):
@@ -429,13 +466,27 @@ class AssignOp(BinaryOp):
 		BinaryOp.__init__(self, lhs, rhs, op)
 
 	def eval(self, environment):
-		if type(self.lhs) != Identifier:
-			raise NotImplemented()
-
 		value = self.rhs.eval(environment)
 
+		if type(self.lhs) == Identifier:
+			get = lambda: environment.get(self.lhs.name)
+			def update(value):
+				environment.update(self.lhs.name, value)
+		elif type(self.lhs) == MemberAccess:
+			key = self.lhs.key.eval(environment)
+			obj = self.lhs.obj.eval(environment)
+			if type(obj) != Object:
+				raise Exception('non-objects do not have members')
+			get = lambda: obj.get(key)
+			def update(value): obj.set(key, value)
+		else:
+			# See: https://stackoverflow.com/questions/16686974/can-a-functions-return-value-be-an-lvalue-in-javascript
+			# and https://stackoverflow.com/questions/13124417/real-world-examples-of-ecmascript-functions-returning-a-reference
+			raise Exception('invalid left-hand side in assignemnt')
+
 		if self.op != '=':
-			curValue = environment.get(self.lhs.name)
+			# Note: get is not called for '=' -> allows adding members
+			curValue = get()
 			if self.op == '+=':
 				value = curValue + value
 			elif self.op == '-=':
@@ -449,7 +500,7 @@ class AssignOp(BinaryOp):
 			else:
 				raise Exception('unknown assignment operator %r' % self.op)
 
-		environment.update(self.lhs.name, value)
+		update(value)
 		return value
 
 class If(Statement):
@@ -516,16 +567,16 @@ class Declaration(Statement):
 class Object:
 	def __init__(self):
 		self.members = {}
-
 	def get(self, key):
+		# TODO: replace with dictionary? inherit from
 		# TODO: convert keys to strings
 		return self.members[key]
-
 	def set(self, key, value):
 		self.members[key] = value
-
 	def has(self, key):
 		return key in self.members
+	def __repr__(self):
+		return self.members.__repr__()
 
 class Parser:
 	def __init__(self, s):
@@ -560,7 +611,7 @@ class Parser:
 
 		self.match(TokenType.CLOSE_PAREN)
 		body = self.block()
-		return Function(parameters, body)
+		return FunctionLiteral(parameters, body)
 
 	def objectLiteral(self):
 		members = []
