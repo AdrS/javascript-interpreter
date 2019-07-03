@@ -4,6 +4,7 @@ import enum
 
 # TODO: logical operators, bitwise, comma
 class TokenType(enum.Enum):
+	# TODO: replace var with let
 	VAR = 0
 	FUNCTION = 1
 	IF = 2
@@ -296,6 +297,7 @@ class Block(Statement):
 		r = '\n'.join(s.__repr__() for s in self.statements)
 		return '{ %s }' % r
 	def eval(self, environment):
+		environment = Environment(environment)
 		for statement in self.statements:
 			print(statement.eval(environment))
 
