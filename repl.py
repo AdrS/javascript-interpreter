@@ -40,9 +40,10 @@ class TokenType(enum.Enum):
 	NOT = 25
 	ASSIGN_OP = 26
 	COMMA = 27
-	AND_OP = 28
-	OR_OP = 29
-	EOF = 30
+	DOT_OP = 28
+	AND_OP = 29
+	OR_OP = 30
+	EOF = 31
 
 class Lexer:
 	reservedWords = {
@@ -54,6 +55,7 @@ class Lexer:
 		'if'       : (TokenType.IF,       None),
 		'else'     : (TokenType.ELSE,     None),
 		'in'       : (TokenType.REL_OP,   'in'),
+		# TODO: delete operator
 		'while'    : (TokenType.WHILE,    None),
 		'return'   : (TokenType.RETURN,   None),
 		'break'    : (TokenType.BREAK,    None),
@@ -81,7 +83,7 @@ class Lexer:
 		'==': TokenType.EQ_OP,
 		'&&': TokenType.AND_OP,
 		'||': TokenType.OR_OP,
-		',': TokenType.COMMA
+		'.': TokenType.DOT_OP
 	}
 
 	punctuation = {
@@ -206,7 +208,7 @@ class Lexer:
 
 				return (TokenType.STRING, text)
 			# Operators
-			elif c in ['<', '>', '=', '+', '-', '*', '%', '!']:
+			elif c in '<>=+-*%!':
 				if self.getchar() == '=':
 					return (Lexer.operators[c + '='], c + '=')
 				else:
@@ -220,6 +222,8 @@ class Lexer:
 				if self.getchar() != '|':
 					raise Exception('invalid token for or')
 				return (TokenType.OR_OP, '||')
+			elif c == '.':
+				return (TokenType.DOT_OP, None)
 			# Punctuation
 			elif c in Lexer.punctuation:
 				return (Lexer.punctuation[c], None)
@@ -674,18 +678,21 @@ class Parser:
 	def unit(self):
 		'''
 		Unit -> Atom | MemberAccess | FunctionCall
-		MemberAccess -> Atom '[' Expression ']'
+		MemberAccess -> Atom '[' Expression ']' | Atom '.' Identifier
 		FunctionCall -> Atom '(' Arguments ')'
 		Arguments -> epsilon | Expression {',' Expression }*
 		'''
 		u = self.atom()
 		# Member access and function calls can be chained
-		while self.tokenType in [TokenType.OPEN_BRACKET, TokenType.OPEN_PAREN]:
+		while self.tokenType in [TokenType.OPEN_BRACKET, TokenType.DOT_OP, TokenType.OPEN_PAREN]:
 			if self.tokenType == TokenType.OPEN_BRACKET:
 				self.match(TokenType.OPEN_BRACKET)
 				member = self.expression()
 				self.match(TokenType.CLOSE_BRACKET)
 				u = MemberAccess(u, member)
+			elif self.tokenType == TokenType.DOT_OP:
+				self.match(TokenType.DOT_OP)
+				u = MemberAccess(u, String(self.identifier().name))
 			else:
 				self.match(TokenType.OPEN_PAREN)
 				# Parse arguments
@@ -984,7 +991,15 @@ def testEval():
 			print(Math["cos"](Math["PI"]*i/n), Math["sin"](Math["PI"]*i/n));
 			i += 1;
 		}
+		''',
 		'''
+		var n = 4;
+		var i = 0;
+		while(i < n) {
+			print(Math.cos(Math.PI*i/n), Math.sin(Math.PI*i/n));
+			i += 1;
+		}
+		''',
 	]
 	for testCase in testCases:
 		print('Testing')
@@ -1224,7 +1239,7 @@ Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | ObjectLiteral
 FunctionCall -> Atom '(' Arguments ')'
 Arguments -> epsilon | Expression {',' Expression }*
 
-MemberAccess -> Atom '[' Expression ']'
+MemberAccess -> Atom '[' Expression ']' | Atom '.' Identifier
 
 // Note: object literal cannot be at the beginning of a statement because then they are treated as a block
 ObjectLiteral -> '{' [ Expression ':' Expression { ',' Expression ':' Expression } '}'
