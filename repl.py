@@ -428,7 +428,7 @@ class BinaryOp(Expression):
 		'<=': lambda a, b: a <= b,
 		'>': lambda a, b: a > b,
 		'>=': lambda a, b: a >= b,
-		'in': lambda a, b: NotImplemented,
+		'in': lambda a, b: b.has(a),
 		'==': lambda a, b: a == b,
 		'!=': lambda a, b: a != b,
 		'=': lambda a, b: NotImplemented,
@@ -440,7 +440,7 @@ class BinaryOp(Expression):
 	}
 
 	def eval(self, environment):
-		# TODO: handle type conversions
+		# TODO: type checking and type conversions
 		return BinaryOp.ops[self.op](self.lhs.eval(environment), self.rhs.eval(environment))
 
 class MulOp(BinaryOp):
@@ -917,7 +917,54 @@ def testEval():
 			i = i + 1;
 		}
 		memo;
+		''',
 		'''
+		var a = {x: 0, y:1, z:2};
+		'w' in a;
+		'x' in a;
+		'y' in a;
+		'z' in a;
+		''',
+		'''
+		var memo = {};
+		var fib = function(n) {
+			if(n < 2) return n;
+			if(n in memo) {
+				return memo[n];
+			}
+			var f = fib(n - 1) + fib(n - 2);
+			return memo[n] = f;
+		};
+		var i = 0;
+		while(i < 10) {
+			memo;
+			fib(i);
+			i = i + 1;
+		}
+		memo;
+		''',
+		'''
+		var fib = function() {
+			// closure demo
+			var memo = {};
+			return function(n) {
+				if(n < 2) return n;
+				if(n in memo) {
+					return memo[n];
+				}
+				var f = fib(n - 1) + fib(n - 2);
+				return memo[n] = f;
+			};
+		}();
+
+		var i = 10;
+		var r = {};
+		while(i >= 0) {
+			r[i] = fib(i);
+			i -= 1;
+		}
+		r;
+		''',
 	]
 	for testCase in testCases:
 		print('Testing')
