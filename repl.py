@@ -429,9 +429,28 @@ class AssignOp(BinaryOp):
 		BinaryOp.__init__(self, lhs, rhs, op)
 
 	def eval(self, environment):
-		raise NotImplemented
-		# lvalue(lhs) = rvalue(rhs)
-		# return new value
+		if type(self.lhs) != Identifier:
+			raise NotImplemented()
+
+		value = self.rhs.eval(environment)
+
+		if self.op != '=':
+			curValue = environment.get(self.lhs.name)
+			if self.op == '+=':
+				value = curValue + value
+			elif self.op == '-=':
+				value = curValue - value
+			elif self.op == '*=':
+				value = curValue * value
+			elif self.op == '/=':
+				value = curValue / value
+			elif self.op == '%=':
+				value = curValue % value
+			else:
+				raise Exception('unknown assignment operator %r' % self.op)
+
+		environment.update(self.lhs.name, value)
+		return value
 
 class If(Statement):
 	def __init__(self, condition, body, elseBody=None):
@@ -804,14 +823,16 @@ class Environment:
 		# Note: change to "name in self.variables or not self.parent" to allow global prop
 		if name in self.variables:
 			self.variables[name] = value
-		if not self.parent:
+		elif not self.parent:
 			raise Exception('%r is undefined' % name)
-		self.parent.update(name)
+		else:
+			self.parent.update(name, value)
 
 def evaluate(source):
 	program = Parser(source).parse()
 	environment = Environment()
 	for statement in program:
+		print(environment.variables)
 		print(statement.eval(environment))
 
 def testParser():
