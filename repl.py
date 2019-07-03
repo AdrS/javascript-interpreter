@@ -2,7 +2,7 @@
 
 import enum, math
 
-# TODO: logical operators, bitwise, comma operator, delete key from object
+# TODO: bitwise, comma operator, delete key from object
 # TODO: arrays and array literals
 # TODO: for loops, do-while, built-in methods, standard library
 
@@ -442,13 +442,7 @@ class BinaryOp(Expression):
 		'>=': lambda a, b: a >= b,
 		'in': lambda a, b: a in b,
 		'==': lambda a, b: a == b,
-		'!=': lambda a, b: a != b,
-		'=': lambda a, b: NotImplemented,
-		'+=': lambda a, b: NotImplemented,
-		'-=': lambda a, b: NotImplemented,
-		'*=': lambda a, b: NotImplemented,
-		'/=': lambda a, b: NotImplemented,
-		'%=': lambda a, b: NotImplemented
+		'!=': lambda a, b: a != b
 	}
 
 	def eval(self, environment):
@@ -474,6 +468,26 @@ class EqOp(BinaryOp):
 	def __init__(self, lhs, rhs, op):
 		assert(op in ['==', '!='])
 		BinaryOp.__init__(self, lhs, rhs, op)
+
+class AndOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op == '&&')
+		BinaryOp.__init__(self, lhs, rhs, '&&')
+	def eval(self, environment):
+		lhs = self.lhs.eval(environment)
+		if not lhs:
+			return lhs
+		return self.rhs.eval(environment)
+
+class OrOp(BinaryOp):
+	def __init__(self, lhs, rhs, op):
+		assert(op == '||')
+		BinaryOp.__init__(self, lhs, rhs, '||')
+	def eval(self, environment):
+		lhs = self.lhs.eval(environment)
+		if lhs:
+			return lhs
+		return self.rhs.eval(environment)
 
 class AssignOp(BinaryOp):
 	def __init__(self, lhs, rhs, op):
@@ -741,8 +755,13 @@ class Parser:
 	def expression(self):
 		# TODO: comma expression (typically used in for loops)
 		'''
-		Assignment -> EqExpression AssignOp Expression
+		Expression -> OrExpression | Assignment
+
+		Assignment -> OrExpression AssignOp Expression
 		AssignOp -> '=' | '+=' | '-=' | '*=' | '/=' | '%='
+
+		OrExpression -> AndExpression { '&&' AndExpression}*
+		AndExpression -> EqExpression { '&&' EqExpression}*
 
 		EqExpression -> RelationalExpression { EqOp EqExpression }*
 		EqOp -> '==' | '!='
@@ -760,7 +779,9 @@ class Parser:
 		# op token type, op class, isLeftAssociative
 		precedenceLevels = [
 			(TokenType.ASSIGN_OP, AssignOp, False),
-			(TokenType.EQ_OP, EqOp, True),
+			(TokenType.OR_OP,  OrOp,  True),
+			(TokenType.AND_OP, AndOp, True),
+			(TokenType.EQ_OP,  EqOp,  True),
 			(TokenType.REL_OP, RelOp, True),
 			(TokenType.ADD_OP, AddOp, True),
 			(TokenType.MUL_OP, MulOp, True)
@@ -1041,8 +1062,26 @@ def testEval():
 			i *= 2;
 		}
 		print(i);
+		''',
 		'''
-
+		print("Testing &&");
+		5 > 9 && print("should not print");
+		5 < 9 && print("should print");
+		print((1 && 2 && 3 && 4) == 4);
+		print((1 && 0 && 3 && 4) == 0);
+		''',
+		'''
+		print("Testing ||");
+		5 > 9 || print("should print");
+		5 < 9 || print("should not print");
+		print((0 || 0 || 3 || 4) == 3);
+		''',
+		'''
+		print("&& has greater precedence than ||");
+		print((1 && 2 || 3) == 2);
+		print((1 || 2 && print("should not print")) == 1);
+		print((0 || 2 && 3) == 3);
+		'''
 	]
 	for testCase in testCases:
 		print('Testing')
@@ -1252,13 +1291,15 @@ Continue  -> 'continue' ';'
 Declaration -> 'var' Identifier [ '=' Expression ] ';'
 IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
 WhileStatement -> 'while '(' Expression ')' Statement
+ForStatement -> 'for '(' [Expression] ';' [Expression] ';' [Expression] ')' Statement
 ReturnStatement -> 'return' [ Expression ] ';'
 
-Expression -> EqExpression | Assignment
+Expression -> OrExpression | Assignment
 
-Assignment -> EqExpression '=' Expression
+Assignment -> OrExpression '=' Expression
 
-# TODO: && and ||
+OrExpression -> AndExpression { '&&' AndExpression}*
+AndExpression -> EqExpression { '&&' EqExpression}*
 
 EqExpression -> RelationalExpression { EqOp EqExpression }*
 EqOp -> '==' | '!='
