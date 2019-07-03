@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 
-import enum
+import enum, math
 
-# TODO: logical operators, bitwise, comma, delete key from object
+# TODO: logical operators, bitwise, comma operator, delete key from object
+# TODO: arrays and array literals
+# TODO: for loops, do-while, built-in methods, standard library
+
+# DeleteExpression -> 'delete' MemberAccess
+# returns false if property is non-configurable ex:
+# var a = [1,2,3], delete a["length"]; evaluated to true
+# see: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/delete
 class TokenType(enum.Enum):
 	# TODO: replace var with let
 	VAR = 0
@@ -293,9 +300,9 @@ class ObjectLiteral(Expression):
 		return '{%s}' % (', '.join('%r:%r' % (key, value) for key, value in self.members),)
 
 	def eval(self, environment):
-		o = Object()
+		o = {}
 		for key, value in self.members:
-			o.set(key, value.eval(environment))
+			o[key] = value.eval(environment)
 		return o
 
 class MemberAccess(Expression):
@@ -319,7 +326,7 @@ class MemberAccess(Expression):
 		'''
 		obj = self.obj.eval(environment)
 		key = self.key.eval(environment)
-		if type(obj) != Object:
+		if type(obj) != dict:
 			raise Exception('non-objects do not have members')
 		return obj.get(key)
 
@@ -332,7 +339,6 @@ class Block(Statement):
 	def eval(self, environment):
 		environment = Environment(environment)
 		for statement in self.statements:
-			# TODO: remove print
 			statement.eval(environment)
 
 class Function:
@@ -345,7 +351,7 @@ class Function:
 		paramsRep = ', '.join(self.params)
 		return 'function(%s)%r env: %r' % (paramsRep, self.body, self.closure)
 
-	def call(self, arguments):
+	def __call__(self, *arguments):
 		environment = Environment(self.closure)
 		if len(arguments) != len(self.params):
 			raise Exception('wrong number of arguments')
@@ -390,8 +396,10 @@ class Call(Expression):
 	def eval(self, environment):
 		# TODO: which gets evaluated first? function or arguments
 		fun = self.fun.eval(environment)
-		assert(type(fun) == Function)
-		return fun.call([a.eval(environment) for a in self.args])
+
+		if callable(fun):
+			return fun(*[a.eval(environment) for a in self.args])
+		raise Exception('not callable')
 
 class Not(Expression):
 	def __init__(self, expr):
@@ -428,7 +436,7 @@ class BinaryOp(Expression):
 		'<=': lambda a, b: a <= b,
 		'>': lambda a, b: a > b,
 		'>=': lambda a, b: a >= b,
-		'in': lambda a, b: b.has(a),
+		'in': lambda a, b: a in b,
 		'==': lambda a, b: a == b,
 		'!=': lambda a, b: a != b,
 		'=': lambda a, b: NotImplemented,
@@ -478,10 +486,10 @@ class AssignOp(BinaryOp):
 		elif type(self.lhs) == MemberAccess:
 			key = self.lhs.key.eval(environment)
 			obj = self.lhs.obj.eval(environment)
-			if type(obj) != Object:
+			if type(obj) != dict:
 				raise Exception('non-objects do not have members')
 			get = lambda: obj.get(key)
-			def update(value): obj.set(key, value)
+			def update(value): obj[key] = value
 		else:
 			# See: https://stackoverflow.com/questions/16686974/can-a-functions-return-value-be-an-lvalue-in-javascript
 			# and https://stackoverflow.com/questions/13124417/real-world-examples-of-ecmascript-functions-returning-a-reference
@@ -577,20 +585,6 @@ class Declaration(Statement):
 		if self.initializer:
 			value = self.initializer.eval(environment)
 		environment.create(self.name.name, value)
-
-class Object:
-	def __init__(self):
-		self.members = {}
-	def get(self, key):
-		# TODO: replace with dictionary? inherit from
-		# TODO: convert keys to strings
-		return self.members[key]
-	def set(self, key, value):
-		self.members[key] = value
-	def has(self, key):
-		return key in self.members
-	def __repr__(self):
-		return self.members.__repr__()
 
 class Parser:
 	def __init__(self, s):
@@ -896,10 +890,28 @@ class Environment:
 def evaluate(source):
 	program = Parser(source).parse()
 	environment = Environment()
-	# TODO: Add built-in functions
+	environment.create('print', print)
+
+	def consoleAssert(cond, *args):
+		if not cond:
+			raise Exception('Assertion failed:', args)
+
+	environment.create('console', {
+		'log': print,
+		'assert': consoleAssert
+	})
+	environment.create('Math', {
+		'E': math.e,
+		'PI': math.pi,
+		'sin': math.sin,
+		'cos': math.cos,
+		'tan': math.tan,
+		'exp': math.exp,
+		# TODO: add more
+	})
 	for statement in program:
 		try:
-			print(statement.eval(environment))
+			statement.eval(environment)
 		except ReturnValue:
 			raise Exception('cannot have return statement outside of function body')
 
@@ -965,6 +977,14 @@ def testEval():
 		}
 		r;
 		''',
+		'''
+		var n = 4;
+		var i = 0;
+		while(i < n) {
+			print(Math["cos"](Math["PI"]*i/n), Math["sin"](Math["PI"]*i/n));
+			i += 1;
+		}
+		'''
 	]
 	for testCase in testCases:
 		print('Testing')
