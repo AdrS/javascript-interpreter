@@ -301,9 +301,19 @@ class ObjectLiteral(Expression):
 class MemberAccess(Expression):
 	def __init__(self, obj, member):
 		assert(isinstance(member, Expression))
+		assert(isinstance(obj, Expression))
 		self.obj, self.member = obj, member
 	def __repr__(self):
 		return '%r[%r]' % (self.obj, self.member)
+
+	def eval(self, environment):
+		# TODO: lvalue member access
+		# TODO: what order to evaluate?
+		key = self.member.eval(environment)
+		obj = self.obj.eval(environment)
+		if type(obj) != Object:
+			raise Exception('non-objects do not have members')
+		return obj.get(key)
 
 class Block(Statement):
 	def __init__(self, statements):
@@ -488,15 +498,15 @@ class Object:
 	def __init__(self):
 		self.members = {}
 
-	def get(self, name):
+	def get(self, key):
 		# TODO: convert keys to strings
-		return self.members[name]
+		return self.members[key]
 
-	def set(self, name, value):
-		self.members[name] = value
+	def set(self, key, value):
+		self.members[key] = value
 
-	def has(self, name):
-		return name in self.members
+	def has(self, key):
+		return key in self.members
 
 class Parser:
 	def __init__(self, s):
