@@ -547,7 +547,12 @@ class While(Statement):
 
 	def eval(self, environment):
 		while self.condition.eval(environment):
-			self.body.eval(environment)
+			try:
+				self.body.eval(environment)
+			except BreakLoop:
+				break
+			except ContinueLoop:
+				continue
 
 class ReturnValue(Exception):
 	def __init__(self, value):
@@ -564,13 +569,19 @@ class Return(Statement):
 	def eval(self, environment):
 		raise ReturnValue(self.expr and self.expr.eval(environment))
 
+class BreakLoop(Exception): pass
+class ContinueLoop(Exception): pass
 class Break(Statement):
 	def __repr__(self):
 		return 'break'
+	def eval(self, environment):
+		raise BreakLoop()
 
 class Continue(Statement):
 	def __repr__(self):
 		return 'continue'
+	def eval(self, environment):
+		raise ContinueLoop()
 
 class Declaration(Statement):
 	# TODO: use Null instead of none for default expression values
@@ -921,6 +932,10 @@ def evaluate(source):
 			statement.eval(environment)
 		except ReturnValue:
 			raise Exception('cannot have return statement outside of function body')
+		except BreakLoop:
+			raise Exception('cannot have break statement outside of loop')
+		except ContinueLoop:
+			raise Exception('cannot have continue statement outside of loop')
 
 def testEval():
 	testCases = [
@@ -1000,6 +1015,34 @@ def testEval():
 			i += 1;
 		}
 		''',
+		'''
+		var i = 0;
+		var s = 0;
+		var n = 10;
+		while(i < n) {
+			i = i + 1;
+			print(i, s);
+			if(i % 2) {
+				print('Skiping odd');
+				continue;
+			}
+			print('Even!');
+			s += i;
+		}
+		print(s);
+		''',
+		'''
+		var i = 1;
+		var n = 30;
+		while(true) {
+			if(i >= n) {
+				break;
+			}
+			i *= 2;
+		}
+		print(i);
+		'''
+
 	]
 	for testCase in testCases:
 		print('Testing')
