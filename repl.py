@@ -2,6 +2,7 @@
 
 import enum
 
+# TODO: logical operators, bitwise, comma
 class TokenType(enum.Enum):
 	VAR = 0
 	FUNCTION = 1
@@ -225,7 +226,7 @@ class Lexer:
 		return tokens
 
 class Statement:
-	def eval(self):
+	def eval(self, environment):
 		raise NotImplemented
 
 class Expression(Statement):
@@ -236,7 +237,7 @@ class Number(Expression):
 		self.value = value
 	def __repr__(self):
 		return '%f' % self.value
-	def eval(self):
+	def eval(self, environment):
 		return self.value
 
 class String(Expression):
@@ -244,7 +245,7 @@ class String(Expression):
 		self.value = value
 	def __repr__(self):
 		return '%r' % self.value
-	def eval(self):
+	def eval(self, environment):
 		return self.value
 
 class Bool(Expression):
@@ -255,13 +256,13 @@ class Bool(Expression):
 		if self.value:
 			return 'true'
 		return 'false'
-	def eval(self):
+	def eval(self, environment):
 		return self.value
 
 class Null(Expression):
 	def __repr__(self):
 		return 'null'
-	def eval(self):
+	def eval(self, environment):
 		return None
 
 class Identifier(Expression):
@@ -269,6 +270,8 @@ class Identifier(Expression):
 		self.name = name
 	def __repr__(self):
 		return 'id(%s)' % self.name
+	def eval(self, environment):
+		return environment.get(self.name)
 
 class MemberAccess(Expression):
 	def __init__(self, obj, member):
@@ -292,6 +295,9 @@ class Block(Statement):
 	def __repr__(self):
 		r = '\n'.join(s.__repr__() for s in self.statements)
 		return '{ %s }' % r
+	def eval(self, environment):
+		for statement in self.statements:
+			print(statement.eval(environment))
 
 class Function(Expression):
 	def __init__(self, params, body, env=None):
@@ -316,8 +322,8 @@ class Not(Expression):
 		self.expr = expr
 	def __repr__(self):
 		return 'not(%r)' % self.expr
-	def eval(self):
-		return not self.expr.eval()
+	def eval(self, environment):
+		return not self.expr.eval(environment)
 
 class UnaryMinus(Expression):
 	def __init__(self, expr):
@@ -325,8 +331,8 @@ class UnaryMinus(Expression):
 		self.expr = expr
 	def __repr__(self):
 		return 'minus(%r)' % self.expr
-	def eval(self):
-		return -self.expr.eval()
+	def eval(self, environment):
+		return -self.expr.eval(environment)
 
 class BinaryOp(Expression):
 	def __init__(self, lhs, rhs, op):
@@ -356,8 +362,9 @@ class BinaryOp(Expression):
 		'%=': lambda a, b: NotImplemented
 	}
 
-	def eval(self):
-		return BinaryOp.ops[self.op](self.lhs.eval(), self.rhs.eval())
+	def eval(self, environment):
+		# TODO: handle type conversions
+		return BinaryOp.ops[self.op](self.lhs.eval(environment), self.rhs.eval(environment))
 
 class MulOp(BinaryOp):
 	def __init__(self, lhs, rhs, op):
@@ -384,6 +391,11 @@ class AssignOp(BinaryOp):
 		assert(op in ['=', '+=', '-=', '*=', '/=', '%='])
 		BinaryOp.__init__(self, lhs, rhs, op)
 
+	def eval(self, environment):
+		raise NotImplemented
+		# lvalue(lhs) = rvalue(rhs)
+		# return new value
+
 class If(Statement):
 	def __init__(self, condition, body, elseBody=None):
 		assert(isinstance(condition, Expression))
@@ -396,11 +408,12 @@ class If(Statement):
 		if self.elseBody != None:
 			e = ' else %r' % self.elseBody
 		return '(if (%r) %r%s)' % (self.condition, self.body, e)
-	def eval(self):
-		if condition.eval():
-			body.eval()
-		elif elseBody != None:
-			elseBody.eval()
+
+	def eval(self, environment):
+		if self.condition.eval(environment):
+			self.body.eval(environment)
+		elif self.elseBody != None:
+			self.elseBody.eval(environment)
 
 class While(Statement):
 	def __init__(self, condition, body):
@@ -438,6 +451,11 @@ class Declaration(Statement):
 		if self.initializer != None:
 			i = ' = %r' % self.initializer
 		return 'var %s%s' % (self.name.name, i)
+	def eval(self, environment):
+		value = None
+		if self.initializer:
+			value = self.initializer.eval(environment)
+		environment.create(self.name.name, value)
 
 class Parser:
 	def __init__(self, s):
@@ -683,6 +701,44 @@ class Parser:
 		self.match(TokenType.EOF)
 		return statements
 
+class Environment:
+	def __init__(self, parent=None):
+		self.parent = parent
+		self.variables = {}
+
+	def has(self, name):
+		if name in self.variables:
+			return True
+		if self.parent:
+			return self.parent.has(name)
+		return False
+
+	def get(self, name):
+		if name in self.variables:
+			return self.variables[name]
+		if self.parent:
+			return self.parent.get(name)
+		raise Exception('%r is undefined' % name)
+
+	def create(self, name, value):
+		if name in self.variables:
+			raise Exception('%r already exists in innermost environment' % name)
+		self.variables[name] = value
+
+	def update(self, name, value):
+		# Note: change to "name in self.variables or not self.parent" to allow global prop
+		if name in self.variables:
+			self.variables[name] = value
+		if not self.parent:
+			raise Exception('%r is undefined' % name)
+		self.parent.update(name)
+
+def evaluate(source):
+	program = Parser(source).parse()
+	environment = Environment()
+	for statement in program:
+		print(statement.eval(environment))
+
 def testParser():
 	testCases = [
 		('0;',),
@@ -861,11 +917,6 @@ def testLexer():
 		except:
 			pass
 
-def evaluate(source):
-	program = Parser(source).parse()
-	for statement in program:
-		print(statement.eval())
-
 '''
 Grammar
 -------
@@ -880,6 +931,7 @@ Statement -> Declaration | Block | IfStatement | WhileStatement
 BreakStatement -> 'break' ';'
 Continue  -> 'continue' ';'
 
+# TODO: delcare multiple identifiers at once
 Declaration -> 'var' Identifier [ '=' Expression ] ';'
 IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
 WhileStatement -> 'while '(' Expression ')' Statement
@@ -888,6 +940,8 @@ ReturnStatement -> 'return' [ Expression ] ';'
 Expression -> EqExpression | Assignment
 
 Assignment -> EqExpression '=' Expression
+
+# TODO: && and ||
 
 EqExpression -> RelationalExpression { EqOp EqExpression }*
 EqOp -> '==' | '!='
