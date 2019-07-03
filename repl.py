@@ -25,16 +25,17 @@ class TokenType(enum.Enum):
 	OPEN_BRACKET = 17
 	CLOSE_BRACKET = 18
 	SEMICOLON = 19
-	MUL_OP = 20
-	ADD_OP = 21
-	REL_OP = 22
-	EQ_OP = 23
-	NOT = 24
-	ASSIGN_OP = 25
-	COMMA = 26
-	AND_OP = 27
-	OR_OP = 28
-	EOF = 29
+	COLON = 20
+	MUL_OP = 21
+	ADD_OP = 22
+	REL_OP = 23
+	EQ_OP = 24
+	NOT = 25
+	ASSIGN_OP = 26
+	COMMA = 27
+	AND_OP = 28
+	OR_OP = 29
+	EOF = 30
 
 class Lexer:
 	reservedWords = {
@@ -84,6 +85,7 @@ class Lexer:
 		'[': TokenType.OPEN_BRACKET,
 		']': TokenType.CLOSE_BRACKET,
 		',': TokenType.COMMA,
+		':': TokenType.COLON,
 		';': TokenType.SEMICOLON
 	}
 
@@ -274,21 +276,34 @@ class Identifier(Expression):
 	def eval(self, environment):
 		return environment.get(self.name)
 
+class ObjectLiteral(Expression):
+	def __init__(self, members):
+		assert(type(members) == list)
+		self.members = []
+		for key, value in members:
+			assert(isinstance(value, Expression))
+			if type(key) == String:
+				self.members.append((key.value, value))
+			elif type(key) == Identifier:
+				self.members.append((key.name, value))
+			else:
+				assert(type(key) == Number)
+				self.members.append((key.value, value))
+	def __repr__(self):
+		return '{%s}' % (', '.join('%r:%r' % (key, value) for key, value in self.members),)
+
+	def eval(self, environment):
+		o = Object()
+		for key, value in self.members:
+			o.set(key, value.eval(environment))
+		return o
+
 class MemberAccess(Expression):
 	def __init__(self, obj, member):
 		assert(isinstance(member, Expression))
 		self.obj, self.member = obj, member
 	def __repr__(self):
 		return '%r[%r]' % (self.obj, self.member)
-
-class Call(Expression):
-	def __init__(self, fun, args):
-		for arg in args:
-			assert(isinstance(arg, Expression))
-		self.fun, self.args = fun, args
-	def __repr__(self):
-		args = ', '.join(a.__repr__() for a in self.args)
-		return 'call(%r, %s)' % (self.fun, args)
 
 class Block(Statement):
 	def __init__(self, statements):
@@ -317,6 +332,16 @@ class Function(Expression):
 	def __repr__(self):
 		paramsRep = ', '.join(p.__repr__() for p in self.params)
 		return 'function(%s)%r' % (paramsRep, self.body)
+
+class Call(Expression):
+	def __init__(self, fun, args):
+		for arg in args:
+			assert(isinstance(arg, Expression))
+		self.fun, self.args = fun, args
+
+	def __repr__(self):
+		args = ', '.join(a.__repr__() for a in self.args)
+		return 'call(%r, %s)' % (self.fun, args)
 
 class Not(Expression):
 	def __init__(self, expr):
@@ -459,6 +484,20 @@ class Declaration(Statement):
 			value = self.initializer.eval(environment)
 		environment.create(self.name.name, value)
 
+class Object:
+	def __init__(self):
+		self.members = {}
+
+	def get(self, name):
+		# TODO: convert keys to strings
+		return self.members[name]
+
+	def set(self, name, value):
+		self.members[name] = value
+
+	def has(self, name):
+		return name in self.members
+
 class Parser:
 	def __init__(self, s):
 		self.lexer = Lexer(s)
@@ -494,9 +533,31 @@ class Parser:
 		body = self.block()
 		return Function(parameters, body)
 
+	def objectLiteral(self):
+		members = []
+		def member():
+			#https://stackoverflow.com/questions/6500573/dynamic-keys-for-object-literals-in-javascript
+			if self.tokenType not in [TokenType.STRING, TokenType.IDENTIFIER, TokenType.NUMBER]:
+				raise Exception("Object literal keys must be string or number literals, or identifiers")
+			key = self.atom()
+			self.match(TokenType.COLON)
+			value = self.expression()
+			members.append((key, value))
+
+		self.match(TokenType.OPEN_BRACE)
+		if self.tokenType != TokenType.CLOSE_BRACE:
+			member()
+			while self.tokenType == TokenType.COMMA:
+				self.match(TokenType.COMMA)
+				member()
+
+		self.match(TokenType.CLOSE_BRACE)
+		return ObjectLiteral(members)
+
 	def atom(self):
 		'''
-		Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
+		Atom -> Number | String | Identifier | 'true' | 'false' | 'null' |
+			ObjectLiteral | Function | '(' Expression ')'
 		'''
 		if self.tokenType == TokenType.NUMBER:
 			e = Number(self.tokenValue)
@@ -512,6 +573,8 @@ class Parser:
 		elif self.tokenType == TokenType.NULL:
 			e = Null()
 			self.match(TokenType.NULL)
+		elif self.tokenType == TokenType.OPEN_BRACE:
+			return self.objectLiteral()
 		elif self.tokenType == TokenType.FUNCTION:
 			return self.function()
 		else:
@@ -790,6 +853,12 @@ def testParser():
 		('var a;',),
 		('var a = 0;',),
 		('var f = function(x) { return x + 1;};',),
+		('var a = {};',),
+		('var a = {"name":"Adrian", "age":22};',),
+		('{ 1; 2;}',), # block
+		('var a = { "x": 1, "y": 0};',), # strings for keys
+		('var b = { x: 1, y: 0};',), # identifier for keys
+		('var c = { 1: 1, 0: 0};',), # number literals for keys
 	]
 
 	for testCase in testCases:
@@ -845,6 +914,7 @@ def testParser():
 		('var a', 'no semicolon'),
 		('var a = ;', 'no initialization expression'),
 		('var f = function(x) { return x + 1};', 'invalid expression'),
+		('{a:1};','cannot have object literal at beginning of statement'),
 	]
 
 	for source, description in invalid:
@@ -895,7 +965,7 @@ def testLexer():
 		('a /*hello * //people\n1 2 3\nhi*/ b', [(TokenType.IDENTIFIER, 'a'), (TokenType.IDENTIFIER, 'b')]),
 		('a//hello people', [(TokenType.IDENTIFIER, 'a')]),
 		# Punctuation
-		('(){};', [(TokenType.OPEN_PAREN, None), (TokenType.CLOSE_PAREN, None), (TokenType.OPEN_BRACE, None), (TokenType.CLOSE_BRACE, None), (TokenType.SEMICOLON, None)]),
+		('(){};:', [(TokenType.OPEN_PAREN, None), (TokenType.CLOSE_PAREN, None), (TokenType.OPEN_BRACE, None), (TokenType.CLOSE_BRACE, None), (TokenType.SEMICOLON, None), (TokenType.COLON, None)]),
 		# Operators
 	]
 
@@ -961,13 +1031,16 @@ Factor -> '!' Factor | '-' Factor | '+' Factor | Unit
 
 Unit -> Atom | MemberAccess | FunctionCall
 
-Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | Function | '(' Expression ')'
+Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | ObjectLiteral | Function | '(' Expression ')'
+
 
 FunctionCall -> Atom '(' Arguments ')'
 Arguments -> epsilon | Expression {',' Expression }*
 
 MemberAccess -> Atom '[' Expression ']'
 
+// Note: object literal cannot be at the beginning of a statement because then they are treated as a block
+ObjectLiteral -> '{' [ Expression ':' Expression { ',' Expression ':' Expression } '}'
 Function -> 'function' '(' ParameterNames ')' Block
 ParameterNames -> epsilon | ParameterName {',' ParameterName }*
 ParameterName -> Identifier
