@@ -2,7 +2,7 @@
 
 import enum
 
-# TODO: logical operators, bitwise, comma
+# TODO: logical operators, bitwise, comma, delete key from object
 class TokenType(enum.Enum):
 	# TODO: replace var with let
 	VAR = 0
@@ -333,7 +333,7 @@ class Block(Statement):
 		environment = Environment(environment)
 		for statement in self.statements:
 			# TODO: remove print
-			print(statement.eval(environment))
+			statement.eval(environment)
 
 class Function:
 	def __init__(self, params, body, closure):
@@ -351,7 +351,10 @@ class Function:
 			raise Exception('wrong number of arguments')
 		for name, value in zip(self.params, arguments):
 			environment.create(name, value)
-		return self.body.eval(environment)
+		try:
+			self.body.eval(environment)
+		except ReturnValue as r:
+			return r.value
 
 class FunctionLiteral(Expression):
 	def __init__(self, params, body):
@@ -530,6 +533,14 @@ class While(Statement):
 	def __repr__(self):
 		return '(while (%r) %r)' % (self.condition, self.body)
 
+	def eval(self, environment):
+		while self.condition.eval(environment):
+			self.body.eval(environment)
+
+class ReturnValue(Exception):
+	def __init__(self, value):
+		self.value = value
+
 class Return(Statement):
 	def __init__(self, expr=None):
 		if expr != None:
@@ -537,6 +548,9 @@ class Return(Statement):
 		self.expr = expr
 	def __repr__(self):
 		return 'return %r' % self.expr
+
+	def eval(self, environment):
+		raise ReturnValue(self.expr and self.expr.eval(environment))
 
 class Break(Statement):
 	def __repr__(self):
@@ -882,9 +896,33 @@ class Environment:
 def evaluate(source):
 	program = Parser(source).parse()
 	environment = Environment()
+	# TODO: Add built-in functions
 	for statement in program:
-		print(environment.variables)
-		print(statement.eval(environment))
+		try:
+			print(statement.eval(environment))
+		except ReturnValue:
+			raise Exception('cannot have return statement outside of function body')
+
+def testEval():
+	testCases = [
+		'''
+		var memo = {};
+		var fib = function(n) {
+			if(n < 2) return n;
+			return fib(n - 1) + fib(n - 2);
+		};
+		var i = 0;
+		while(i < 10) {
+			memo[i] = fib(i);
+			i = i + 1;
+		}
+		memo;
+		'''
+	]
+	for testCase in testCases:
+		print('Testing')
+		print(testCase)
+		evaluate(testCase)
 
 def testParser():
 	testCases = [
@@ -1132,3 +1170,4 @@ see: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators
 if __name__ == '__main__':
 	testLexer()
 	testParser()
+	testEval()
