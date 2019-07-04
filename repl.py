@@ -1332,7 +1332,6 @@ def testLexer():
 def runFile(path):
 	with open(path, 'r') as f:
 		source = f.read()
-	print(source)
 	evaluate(source)
 
 if __name__ == '__main__':
