@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
-import enum, math
+import enum, math, random, sys
 
 # TODO: bitwise, comma operator, delete key from object
 # TODO: arrays and array literals
 # TODO: for loops, do-while, built-in methods, standard library
+# TODO: try-catch
+# TODO: write conways game of life to test
 
 # DeleteExpression -> 'delete' MemberAccess
 # returns false if property is non-configurable ex:
@@ -755,7 +757,8 @@ class Parser:
 	def expression(self):
 		# TODO: comma expression (typically used in for loops)
 		'''
-		Expression -> OrExpression | Assignment
+		Expression -> SingleExpression {',' SingleExpression}*
+		SingleExpression -> OrExpression | Assignment
 
 		Assignment -> OrExpression AssignOp Expression
 		AssignOp -> '=' | '+=' | '-=' | '*=' | '/=' | '%='
@@ -934,6 +937,10 @@ def evaluate(source):
 	def consoleAssert(cond, *args):
 		if not cond:
 			raise Exception('Assertion failed:', args)
+	def mathRound(x):
+		# https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round
+		y = +x + 0.5
+		return y - (y % 1)
 
 	environment.create('console', {
 		'log': print,
@@ -941,13 +948,49 @@ def evaluate(source):
 	})
 	environment.create('Math', {
 		'E': math.e,
+		'LN2': math.log(2),
+		'LN10': math.log(10),
+		'LOG2E': math.log2(math.e),
+		'LOG10E': math.log10(math.e),
 		'PI': math.pi,
-		'sin': math.sin,
+		'SQRT1_2': math.sqrt(0.5),
+		'SQRT2': math.sqrt(2),
+		'abs': abs,
+		'acos': math.acos,
+		'acosh': math.acosh,
+		'asin': math.asin,
+		'asinh': math.asinh,
+		'atan': math.atan,
+		'atanh': math.atanh,
+		'atan2': math.atan2,
+		'cbrt': lambda x: math.pow(x, 1.0/3.0),
+		'ceil': math.ceil,
+		'clz32': NotImplemented,
 		'cos': math.cos,
-		'tan': math.tan,
+		'cosh': math.cosh,
 		'exp': math.exp,
-		# TODO: add more
+		'expm1': math.expm1,
+		'floor': math.floor,
+		'fround': NotImplemented,
+		'hypot': lambda *args: math.sqrt(sum(x*x for x in args)),
+		'imul': NotImplemented,
+		'log': math.log,
+		'log1p': math.log1p,
+		'log10': math.log10,
+		'log2': math.log2,
+		'max': max,
+		'min': min,
+		'pow': math.pow,
+		'random': random.random,
+		'round': mathRound,
+		'sign': lambda x: 1 if x > 0 else -1 if x < 0 else 0,
+		'sin': math.sin,
+		'sinh': math.sinh,
+		'sqrt': math.sqrt,
+		'tan': math.tan,
+		'trunc': int
 	})
+	# TODO: parseInt, parseFloat, string methods
 	for statement in program:
 		try:
 			statement.eval(environment)
@@ -1081,6 +1124,17 @@ def testEval():
 		print((1 && 2 || 3) == 2);
 		print((1 || 2 && print("should not print")) == 1);
 		print((0 || 2 && 3) == 3);
+		''',
+		'''
+		print("higher order functions");
+		var map = function(f, n) {
+			var i = 0;
+			while(i < n) {
+				print(f(i));
+				i += 1;
+			}
+		};
+		map(function(x) { return x*x;}, 10);
 		'''
 	]
 	for testCase in testCases:
@@ -1273,67 +1327,15 @@ def testLexer():
 		except:
 			pass
 
-'''
-Grammar
--------
-Program -> StatementList
-Block -> '{' StatementList '}'
-StatementList -> { Statement }*
-Statement -> Declaration | Block | IfStatement | WhileStatement
-			| ReturnStatement | Expression ';'
-			| BreakStatement
-			| ContinueStatement
+def runFile(path):
+	with open(path, 'r') as f:
+		source = f.read()
+	print(source)
+	evaluate(source)
 
-BreakStatement -> 'break' ';'
-Continue  -> 'continue' ';'
-
-# TODO: delcare multiple identifiers at once
-Declaration -> 'var' Identifier [ '=' Expression ] ';'
-IfStatement -> 'if' '(' Expression ')' Statement [ 'else' Statement ]
-WhileStatement -> 'while '(' Expression ')' Statement
-ForStatement -> 'for '(' [Expression] ';' [Expression] ';' [Expression] ')' Statement
-ReturnStatement -> 'return' [ Expression ] ';'
-
-Expression -> OrExpression | Assignment
-
-Assignment -> OrExpression '=' Expression
-
-OrExpression -> AndExpression { '&&' AndExpression}*
-AndExpression -> EqExpression { '&&' EqExpression}*
-
-EqExpression -> RelationalExpression { EqOp EqExpression }*
-EqOp -> '==' | '!='
-
-RelationalExpression -> ArithematicExpression { RelOp ArithematicExpression }*
-RelOp -> '<' | '<=' | '>' | '>=' | 'in'
-
-ArithematicExpression -> Term { AddOp Term }*
-AddOp -> '+' | '-'
-
-Term -> Factor { MulOp Factor }*
-MulOp -> '*' | '/' | '%'
-
-Factor -> '!' Factor | '-' Factor | '+' Factor | Unit
-
-Unit -> Atom | MemberAccess | FunctionCall
-
-Atom -> Number | String | Identifier | 'true' | 'false' | 'null' | ObjectLiteral | Function | '(' Expression ')'
-
-
-FunctionCall -> Atom '(' Arguments ')'
-Arguments -> epsilon | Expression {',' Expression }*
-
-MemberAccess -> Atom '[' Expression ']' | Atom '.' Identifier
-
-// Note: object literal cannot be at the beginning of a statement because then they are treated as a block
-ObjectLiteral -> '{' [ Expression ':' Expression { ',' Expression ':' Expression } '}'
-Function -> 'function' '(' ParameterNames ')' Block
-ParameterNames -> epsilon | ParameterName {',' ParameterName }*
-ParameterName -> Identifier
-
-see: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence
-'''
 if __name__ == '__main__':
-	testLexer()
-	testParser()
-	testEval()
+	if len(sys.argv) == 2:
+		runFile(sys.argv[1])
+	# testLexer()
+	# testParser()
+	# testEval()
