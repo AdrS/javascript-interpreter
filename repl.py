@@ -156,6 +156,8 @@ class Lexer:
 						c = self.getchar(True)
 						if c == '/':
 							break
+						if c == '*':
+							self.unget()
 				elif c == '=':
 					return (Lexer.operators['/='], '/=')
 				else:
