@@ -22,30 +22,33 @@ class TokenType(enum.Enum):
 	RETURN = 5
 	BREAK = 6
 	CONTINUE = 7
-	IDENTIFIER = 8
-	NUMBER = 9
-	STRING = 10
-	BOOL = 11
-	NULL = 12
-	OPEN_PAREN = 13
-	CLOSE_PAREN = 14
-	OPEN_BRACE = 15
-	CLOSE_BRACE = 16
-	OPEN_BRACKET = 17
-	CLOSE_BRACKET = 18
-	SEMICOLON = 19
-	COLON = 20
-	MUL_OP = 21
-	ADD_OP = 22
-	REL_OP = 23
-	EQ_OP = 24
-	NOT = 25
-	ASSIGN_OP = 26
-	COMMA = 27
-	DOT_OP = 28
-	AND_OP = 29
-	OR_OP = 30
-	EOF = 31
+	TRY = 8
+	CATCH = 9
+	THROW = 10
+	IDENTIFIER = 11
+	NUMBER = 12
+	STRING = 13
+	BOOL = 14
+	NULL = 15
+	OPEN_PAREN = 16
+	CLOSE_PAREN = 17
+	OPEN_BRACE = 18
+	CLOSE_BRACE = 19
+	OPEN_BRACKET = 20
+	CLOSE_BRACKET = 21
+	SEMICOLON = 22
+	COLON = 23
+	MUL_OP = 24
+	ADD_OP = 25
+	REL_OP = 26
+	EQ_OP = 27
+	NOT = 28
+	ASSIGN_OP = 29
+	COMMA = 30
+	DOT_OP = 31
+	AND_OP = 32
+	OR_OP = 33
+	EOF = 34
 
 class Lexer:
 	reservedWords = {
@@ -61,7 +64,10 @@ class Lexer:
 		'while'    : (TokenType.WHILE,    None),
 		'return'   : (TokenType.RETURN,   None),
 		'break'    : (TokenType.BREAK,    None),
-		'continue' : (TokenType.CONTINUE, None)
+		'continue' : (TokenType.CONTINUE, None),
+		'try'      : (TokenType.TRY,      None),
+		'catch'    : (TokenType.CATCH,    None),
+		'throw'    : (TokenType.THROW,    None)
 	}
 
 	operators = {
@@ -588,18 +594,44 @@ class Return(Statement):
 		raise ReturnValue(self.expr and self.expr.eval(environment))
 
 class BreakLoop(Exception): pass
-class ContinueLoop(Exception): pass
 class Break(Statement):
 	def __repr__(self):
 		return 'break'
 	def eval(self, environment):
 		raise BreakLoop()
 
+class ContinueLoop(Exception): pass
 class Continue(Statement):
 	def __repr__(self):
 		return 'continue'
 	def eval(self, environment):
 		raise ContinueLoop()
+
+class ExceptionObject(Exception):
+	def __init__(self, obj):
+		self.obj = obj
+
+class Throw(Statement):
+	def __init__(self, expr):
+		self.expr = expr
+	def __repr__(self):
+		return 'throw %r' % self.expr
+	def eval(self, environment):
+		raise ExceptionObject(self.expr.eval(environment))
+
+class TryCatch(Statement):
+	def __init__(self, tryBlock, catchBlock, exceptionIdentifier):
+		self.tryBlock = tryBlock
+		self.catchBlock = catchBlock
+		self.exceptionIdentifier = exceptionIdentifier
+	def eval(self, environment):
+		try:
+			self.tryBlock.eval(environment)
+		except ExceptionObject as e:
+			catchEnv = Environment(environment)
+			catchEnv.create(self.exceptionIdentifier, e.obj)
+			self.catchBlock.eval(catchEnv)
+		# TODO: finally + multiple catch blocks
 
 class Declaration(Statement):
 	# TODO: use Null instead of none for default expression values
@@ -844,16 +876,34 @@ class Parser:
 		self.match(TokenType.SEMICOLON)
 		return Declaration(Identifier(name), value)
 
+	def tryCatch(self):
+		'''
+		TryCatch -> 'try' Block 'catch' '(' Identifier ')' Block
+		// TODO: multiple catch blocks, finally blocks
+		'''
+		self.match(TokenType.TRY)
+		tryBlock = self.block()
+		# TODO: multiple catch blocks
+		self.match(TokenType.CATCH)
+		self.match(TokenType.OPEN_PAREN)
+		exceptionIdentifier = self.identifier()
+		self.match(TokenType.CLOSE_PAREN)
+		catchBlock = self.block()
+		return TryCatch(tryBlock, catchBlock, exceptionIdentifier.name)
+
 	def statement(self):
 		'''
 		Statement -> Declaration | Block | IfStatement | WhileStatement
 					| ReturnStatement | Expression ';'
 					| BreakStatement
 					| ContinueStatement
+					| TryCatch
+					| ThrowStatement
 
 		BreakStatement -> 'break' ';'
 		ContinueStatement  -> 'continue' ';'
 		ReturnStatement -> 'return' [ Expression ] ';'
+		ThrowStatement -> 'throw' Expression ';'
 		'''
 		if self.tokenType == TokenType.VAR:
 			return self.declaration()
@@ -863,6 +913,8 @@ class Parser:
 			return self.ifStatement()
 		if self.tokenType == TokenType.WHILE:
 			return self.whileStatement()
+		if self.tokenType == TokenType.TRY:
+			return self.tryCatch()
 		if self.tokenType == TokenType.RETURN:
 			self.match(TokenType.RETURN)
 			expr = None
@@ -878,6 +930,12 @@ class Parser:
 			self.match(TokenType.CONTINUE)
 			self.match(TokenType.SEMICOLON)
 			return Continue()
+		if self.tokenType == TokenType.THROW:
+			self.match(TokenType.THROW)
+			expr = self.expression()
+			self.match(TokenType.SEMICOLON)
+			# TODO: check rules on throw statements
+			return Throw(expr)
 
 		e = self.expression()
 		self.match(TokenType.SEMICOLON)

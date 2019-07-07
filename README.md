@@ -71,6 +71,17 @@ map(function(x) { console.log('fib', x, '=', fib(x)); }, 0, 10, 1);
 false && console.log("this does not execute");
 true || console.log("this does not execute");
 
+/******** Exceptions ******************************/
+var e = "hi";
+try {
+	console.log(e);
+	throw {error:":("};
+	console.log("should not run");
+} catch(e) {
+	console.log("catch", e);
+}
+console.log(e);
+
 /******** Scope ******************************/
 // JavaScript's scope rules are weird and annoying. I ignored them and tried to
 // stick to conventional scope rules. The main differences are:
